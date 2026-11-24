@@ -33,7 +33,7 @@ import android.widget.Toast
 import java.util.Locale
 
 /** Line glyphs for Control Center, drawn in a box of side s centred on (cx, cy). No vector assets. */
-enum class Glyph { NONE, POWER, WIFI, MOON, SPEAKER, TIMER, GAMEPAD, ACCESS, LOCK, GEAR, PEOPLE, PLAY, PAUSE, PREV, NEXT, SHIELD, TOGGLES, NOTE, CHECK, CLOSE, OPEN, INPUT }
+enum class Glyph { NONE, POWER, WIFI, MOON, SPEAKER, TIMER, GAMEPAD, ACCESS, LOCK, GEAR, PEOPLE, PLAY, PAUSE, PREV, NEXT, SHIELD, TOGGLES, NOTE, CHECK, CLOSE, OPEN, INPUT, EXPAND }
 
 object Glyphs {
     private val path = Path()
@@ -212,6 +212,15 @@ object Glyphs {
             Glyph.CLOSE -> {
                 c.drawLine(cx - h * 0.5f, cy - h * 0.5f, cx + h * 0.5f, cy + h * 0.5f, p)
                 c.drawLine(cx + h * 0.5f, cy - h * 0.5f, cx - h * 0.5f, cy + h * 0.5f, p)
+            }
+            Glyph.EXPAND -> {
+                // Four corners pointing out: full screen.
+                val o = h * 0.62f
+                val l = h * 0.38f
+                for (sx in intArrayOf(-1, 1)) for (sy in intArrayOf(-1, 1)) {
+                    c.drawLine(cx + sx * o, cy + sy * o, cx + sx * (o - l), cy + sy * o, p)
+                    c.drawLine(cx + sx * o, cy + sy * o, cx + sx * o, cy + sy * (o - l), p)
+                }
             }
             Glyph.OPEN -> {
                 c.drawLine(cx - h * 0.45f, cy + h * 0.45f, cx + h * 0.55f, cy - h * 0.55f, p)
@@ -867,11 +876,14 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
         val next = CcButton(ctx, size, cellW, Glyph.NEXT, "", labelH = 0).apply {
             id = View.generateViewId(); onClick = { watched?.transportControls?.skipToNext() }
         }
+        val full = CcButton(ctx, size, cellW, Glyph.EXPAND, "", labelH = 0).apply {
+            id = View.generateViewId(); onClick = { close(instant = true) { home.openNowPlaying() } }
+        }
         val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false; clipToPadding = false }
-        row.addView(prev); row.addView(play); row.addView(next)
+        row.addView(prev); row.addView(play); row.addView(next); row.addView(full)
         box.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dpi(10f) })
         body.addView(box, LayoutParams(-1, -2))
-        topRow = listOf(prev, play, next)
+        topRow = listOf(prev, play, next, full)
         entry = play
         playing = PlayingViews(art, app, title, sub, progress, play)
         fillPlaying(now)
@@ -982,7 +994,8 @@ private class AvatarView(ctx: Context, private val size: Int, img: Bitmap) : Vie
 }
 
 /** Now Playing artwork, or the app's icon on a glass tile. */
-private class ArtView(ctx: Context, private val size: Int) : View(ctx) {
+/** Album art with rounded corners, or the app icon on a soft square when there is none. */
+class ArtView(ctx: Context, private val size: Int, private val radius: Float = ctx.dp(12f)) : View(ctx) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val rect = RectF()
     private var art: Bitmap? = null
@@ -1005,7 +1018,7 @@ private class ArtView(ctx: Context, private val size: Int) : View(ctx) {
 
     override fun onDraw(c: Canvas) {
         val s = size.toFloat()
-        val rad = dp(12f)
+        val rad = radius
         rect.set(0f, 0f, s, s)
         if (p.shader != null) { p.color = Color.WHITE; c.drawRoundRect(rect, rad, rad, p); return }
         p.color = 0x33FFFFFF
@@ -1018,12 +1031,18 @@ private class ArtView(ctx: Context, private val size: Int) : View(ctx) {
     }
 }
 
-/** Now Playing progress: a thin track, with the elapsed time under its start and the time left under its end. */
-private class ProgressLine(ctx: Context) : View(ctx) {
+/**
+ * Now Playing progress: a thin track, with the elapsed time under its start and the time left under its end. [scale]
+ * enlarges it for the full-screen view.
+ */
+class ProgressLine(ctx: Context, private val scale: Float = 1f) : View(ctx) {
+    /** The elapsed part's colour. */
+    var accent = 0xE6FFFFFF.toInt()
+        set(v) { if (field != v) { field = v; invalidate() } }
     private var pos = 0L
     private var dur = 0L
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val t = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Fonts.medium; textSize = ctx.dp(11f); color = 0x99FFFFFF.toInt() }
+    private val t = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Fonts.medium; textSize = ctx.dp(11f * scale); color = 0x99FFFFFF.toInt() }
     private val r = RectF()
 
     fun set(position: Long, duration: Long) {
@@ -1032,19 +1051,19 @@ private class ProgressLine(ctx: Context) : View(ctx) {
         invalidate()
     }
 
-    override fun onMeasure(w: Int, h: Int) = setMeasuredDimension(MeasureSpec.getSize(w), dpi(26f))
+    override fun onMeasure(w: Int, h: Int) = setMeasuredDimension(MeasureSpec.getSize(w), dpi(26f * scale))
 
     override fun onDraw(c: Canvas) {
-        val bh = dp(4f)
+        val bh = dp(4f * scale)
         val w = width.toFloat()
         r.set(0f, 0f, w, bh)
         p.color = 0x40FFFFFF
         c.drawRoundRect(r, bh / 2, bh / 2, p)
         val f = if (dur > 0L) (pos.toFloat() / dur).coerceIn(0f, 1f) else 0f
         r.set(0f, 0f, maxOf(bh, w * f), bh)
-        p.color = 0xE6FFFFFF.toInt()
+        p.color = accent
         c.drawRoundRect(r, bh / 2, bh / 2, p)
-        val y = bh + dp(16f)
+        val y = bh + dp(16f * scale)
         t.textAlign = Paint.Align.LEFT
         c.drawText(time(pos), 0f, y, t)
         t.textAlign = Paint.Align.RIGHT
