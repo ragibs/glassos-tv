@@ -164,14 +164,18 @@ class MainActivity : Activity(), HomeHost {
         demo?.release(); demo = null
         if (!on) return
         val s = android.media.session.MediaSession(this, "glass-demo")
+        // Album art, an album and a length, so full-screen Now Playing shows everything it can.
         s.setMetadata(android.media.MediaMetadata.Builder()
             .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, "Demo Track")
             .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "Glass test session")
+            .putString(android.media.MediaMetadata.METADATA_KEY_ALBUM, "Glass Demo Album")
+            .putLong(android.media.MediaMetadata.METADATA_KEY_DURATION, 210_000L)
+            .putBitmap(android.media.MediaMetadata.METADATA_KEY_ART, WallpaperStore.load(this, "scene:desert", 600, 600).sharp)
             .build())
         s.setPlaybackState(android.media.session.PlaybackState.Builder()
             .setActions(android.media.session.PlaybackState.ACTION_PLAY_PAUSE or android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT or
                 android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS)
-            .setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1f).build())
+            .setState(android.media.session.PlaybackState.STATE_PLAYING, 45_000L, 1f).build())
         s.isActive = true
         demo = s
     }

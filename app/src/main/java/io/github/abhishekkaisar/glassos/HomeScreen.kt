@@ -25,6 +25,10 @@ import java.util.concurrent.Executors
 interface HomeHost {
     /** Starts an app. [from] is the tile it was opened from, if any. */
     fun startApp(i: Intent, pkg: String, from: View?)
+    /** Starts an app's own screen through its intent (a media session's player). */
+    fun startPending(pi: android.app.PendingIntent, pkg: String) {
+        try { pi.send() } catch (e: Throwable) { }
+    }
 }
 
 /** Where the user was on a home screen, carried between the overlay and MainActivity. */
@@ -62,6 +66,9 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private lateinit var header: FrameLayout
     private lateinit var content: FrameLayout
     private lateinit var shelf: GlassBox
+    private lateinit var nowPlaying: NowPlayingScreen
+    /** Where focus was when full-screen Now Playing opened. */
+    private var nowPlayingReturn: View? = null
     private lateinit var gear: UserPill
     private lateinit var chevron: View
     private lateinit var hint: TextView
@@ -143,6 +150,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         hero.release()
         // The overlay is removed with Control Center open when it hands over to MainActivity.
         if (::cc.isInitialized) cc.release()
+        if (::nowPlaying.isInitialized) nowPlaying.release()
         labelAnim?.cancel()
         main.removeCallbacksAndMessages(null)
         worker.shutdownNow()
@@ -273,6 +281,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         root.addView(settings, FrameLayout.LayoutParams(-1, -1))
         cc = ControlCenter(this)
         root.addView(cc, FrameLayout.LayoutParams(-1, -1))
+        nowPlaying = NowPlayingScreen(this)
+        root.addView(nowPlaying, FrameLayout.LayoutParams(-1, -1))
         setup = SetupView(this)
         root.addView(setup, FrameLayout.LayoutParams(-1, -1))
         appMenu = AppMenu(this)
@@ -351,7 +361,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     fun updateHeroRunning() {
         if (!::hero.isInitialized || released) return
         hero.setRunning(resumed && currentRow == 0 && !settings.isOpen && !cc.isOpen && !setup.isOpen && !hero.isFocused && !editMode &&
-            movingPkg == null && !appMenu.isOpen)
+            movingPkg == null && !appMenu.isOpen && !nowPlaying.isOpen)
     }
 
     /**
@@ -487,11 +497,30 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** The window went to the back (an app, the screensaver, Settings): a move in progress is put back. */
     fun onPaused() {
         resumed = false
+        main.removeCallbacks(idleCheck)
         if (::appMenu.isInitialized) leaveMove()
+    }
+
+    private var resumedAt = 0L
+
+    /** Music playing and the home left alone for [NOW_PLAYING_IDLE_MS]: full-screen Now Playing opens by itself. */
+    private val idleCheck = object : Runnable {
+        override fun run() {
+            if (released || !resumed) return
+            val idle = SystemClock.uptimeMillis() - maxOf(lastKeyAt, resumedAt)
+            if (idle >= NOW_PLAYING_IDLE_MS && !nowPlaying.isOpen && !settings.isOpen && !cc.isOpen && !setup.isOpen &&
+                !appMenu.isOpen && !editMode && movingPkg == null && NowPlaying.current(ctx)?.playing == true) {
+                openNowPlaying(auto = true)
+            }
+            main.postDelayed(this, IDLE_CHECK_MS)
+        }
     }
 
     fun onResumed() {
         resumed = true
+        resumedAt = SystemClock.uptimeMillis()
+        main.removeCallbacks(idleCheck)
+        main.postDelayed(idleCheck, IDLE_CHECK_MS)
         if (::setup.isInitialized) setup.onReturned()
         updateTime()
         if (!worker.isShutdown) worker.execute { refreshTitles(prefs.scene, wallToken) }
@@ -746,6 +775,9 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         host.startApp(i, pkg, from)
     }
+
+    /** Opens an app's own screen (a media session's player), through the window that shows this home. */
+    fun startPending(pi: android.app.PendingIntent, pkg: String) = host.startPending(pi, pkg)
 
     /** The default start, used by MainActivity: a scale-up from the tile. */
     fun startFrom(i: Intent, from: View?) {
@@ -1018,6 +1050,23 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         updateHeroRunning()
     }
 
+    /** Full-screen Now Playing (from Control Center, or by itself: [auto]). Focus goes back where it was when it closes. */
+    fun openNowPlaying(auto: Boolean = false) {
+        if (nowPlaying.isOpen || settings.isOpen || setup.isOpen) return
+        nowPlayingReturn = focused()
+        blockHome(true)
+        if (!nowPlaying.open(auto)) { blockHome(false); return }
+        updateHeroRunning()
+    }
+
+    fun onNowPlayingClosed() {
+        blockHome(false)
+        val r = nowPlayingReturn
+        nowPlayingReturn = null
+        if (r != null && r.isAttachedToWindow && r.parent != null) r.requestFocus() else focusDock()
+        updateHeroRunning()
+    }
+
     fun onControlCenterClosed(returnTo: View?) {
         blockHome(false)
         if (!settings.isOpen && !editMode) {
@@ -1152,7 +1201,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             if (e.repeatCount > 0) return true
             eatOkUp = false
         }
-        if (settings.isOpen || cc.isOpen || appMenu.isOpen) return false
+        if (settings.isOpen || cc.isOpen || appMenu.isOpen || nowPlaying.isOpen) return false
         val focusTile = focused() as? TileView
         if (movingPkg != null) {
             // The hold that started the move keeps repeating until OK is let go: only a new press drops.
@@ -1209,6 +1258,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** Menu opens Control Center anywhere on the home; while an app is moving it opens the app's options. */
     private fun onMenu() {
         when {
+            nowPlaying.isOpen -> nowPlaying.close()
             cc.isOpen -> cc.close()
             settings.isOpen -> settings.close()
             appMenu.isOpen -> appMenu.close()
@@ -1221,6 +1271,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     fun onBack() {
         when {
             setup.isOpen -> setup.back()
+            nowPlaying.isOpen -> nowPlaying.close()
             cc.isOpen -> cc.back()
             settings.isOpen -> settings.close()
             appMenu.isOpen -> appMenu.close()
@@ -1234,10 +1285,11 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** Home pressed again while this home is shown: like tvOS, close what is open and keep focus. */
     fun onHomeAgain(fromWatcher: Boolean) {
         if (setup.isOpen) return
-        if (fromWatcher && !settings.isOpen && !cc.isOpen && !editMode && movingPkg == null && !appMenu.isOpen) {
+        if (fromWatcher && !settings.isOpen && !cc.isOpen && !editMode && movingPkg == null && !appMenu.isOpen && !nowPlaying.isOpen) {
             if (focused() == null) focusDock()
             return
         }
+        if (nowPlaying.isOpen) nowPlaying.close(instant = true)
         if (cc.isOpen) cc.close(instant = true)
         if (settings.isOpen) settings.close()
         leaveMove()
@@ -1264,5 +1316,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         const val COLS = 6
         /** A focus change this soon after a key (a press, or a panel closing after Back) counts as caused by it. */
         private const val KEY_FOCUS_MS = 1000L
+        /** With music playing, this long without a key on the home opens full-screen Now Playing. */
+        const val NOW_PLAYING_IDLE_MS = 3 * 60_000L
+        private const val IDLE_CHECK_MS = 15_000L
     }
 }

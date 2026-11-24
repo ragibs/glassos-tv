@@ -43,7 +43,10 @@ on the Android TV emulator.
 - **Control Center** (Menu, or OK on the pill): the time and date, with tabs for your profile, the controls (Sleep,
   Wi-Fi, Do Not Disturb, Audio, Inputs on TVs with HDMI inputs such as Fire TV Edition TVs and the Fire TV Cube, a
   sleep timer, Controllers, Accessibility, Parental Controls on Fire TV), Now Playing (while something plays, with
-  its progress) and VPN (while a VPN is on). On Android TV the buttons open the standard Settings pages.
+  its progress, and a full-screen view: the album art large on a blur of itself, tinted with the art's colour; OK
+  there opens the app's own player. With music playing, it also opens by itself after 3 minutes untouched on the
+  home, drifts slowly and dims after 15 minutes against burn-in) and VPN (while a VPN is on). On Android TV the
+  buttons open the standard Settings pages.
 - **Your Home button**: on Android TV GlassOS can be the default home app. Where the TV does not allow that (Fire TV,
   and Android TV or Google TV builds that keep their own home), GlassOS notices the stock home and covers it, so
   the Home button still lands in GlassOS.

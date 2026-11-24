@@ -47,6 +47,14 @@ object HomeOverlay {
             main.removeCallbacks(giveUp)
             main.postDelayed(giveUp, LAUNCH_TIMEOUT_MS)
         }
+
+        override fun startPending(pi: android.app.PendingIntent, pkg: String) {
+            launching = true
+            WLog.i("overlay launch $pkg (its player)")
+            try { pi.send() } catch (e: Throwable) { }
+            main.removeCallbacks(giveUp)
+            main.postDelayed(giveUp, LAUNCH_TIMEOUT_MS)
+        }
     }
 
     /** Shows the overlay (or, when already shown, treats it as another Home press). */
