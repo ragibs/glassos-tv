@@ -72,6 +72,13 @@ class NowPlayingScreen(private val home: HomeScreen) : FrameLayout(home.ctx) {
     private var openedAt = 0L
     private var lastKey = 0L
     private var dimmed = false
+    /**
+     * Set while the app's player starts: the view stays up until the home is hidden ([onHidden]), so the home does
+     * not show between this screen and the player.
+     */
+    private var launching = false
+    /** The player never came up: close anyway. */
+    private val giveUp = Runnable { if (launching) close(instant = true) }
 
     private val sessionCb = object : MediaController.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackState?) { ui.post { refresh(false) } }
@@ -141,7 +148,9 @@ class NowPlayingScreen(private val home: HomeScreen) : FrameLayout(home.ctx) {
     fun close(instant: Boolean = false) {
         if (!isOpen) return
         isOpen = false
+        launching = false
         ui.removeCallbacks(tick)
+        ui.removeCallbacks(giveUp)
         unwatch()
         keepScreenOn = false
         val done = {
@@ -322,13 +331,21 @@ class NowPlayingScreen(private val home: HomeScreen) : FrameLayout(home.ctx) {
         return super.onKeyUp(keyCode, e)
     }
 
-    /** The app's own player (the session's activity), else the app. */
+    /** The app's own player (the session's activity), else the app. This screen closes once it is out of sight. */
     private fun openPlayer() {
+        if (launching) return
         val c = watched ?: return
         val p = c.packageName
         val pi = c.sessionActivity
-        close(instant = true)
+        launching = true
+        ui.removeCallbacks(giveUp)
+        ui.postDelayed(giveUp, LAUNCH_MS)
         if (pi != null) home.startPending(pi, p) else home.launch(p, null)
+    }
+
+    /** The home went behind another app: a player opened from here has taken over, so close out of sight. */
+    fun onHidden() {
+        if (launching) close(instant = true)
     }
 
     companion object {
@@ -343,6 +360,8 @@ class NowPlayingScreen(private val home: HomeScreen) : FrameLayout(home.ctx) {
         /** How far the art and text drift, as a share of the screen. */
         private const val DRIFT_X = 0.025
         private const val DRIFT_Y = 0.03
+        /** How long the app's player may take to come up before this screen closes anyway. */
+        private const val LAUNCH_MS = 4000L
 
         /**
          * The art's main colour, lifted to read on the dark screen: the hue with the most colourful pixels (12

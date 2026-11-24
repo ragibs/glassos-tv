@@ -498,6 +498,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     fun onPaused() {
         resumed = false
         main.removeCallbacks(idleCheck)
+        if (::nowPlaying.isInitialized) nowPlaying.onHidden()
         if (::appMenu.isInitialized) leaveMove()
     }
 
