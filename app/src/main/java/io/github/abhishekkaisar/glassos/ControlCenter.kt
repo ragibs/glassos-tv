@@ -754,7 +754,35 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
             else circle(Glyph.LOCK, "Parental") { open(FireIntents.parental(), "com.amazon.tv.parentalcontrols", "Choose Preferences, then Parental Controls") }
         val fire = circle(Glyph.OPEN, "TV Settings") { close(instant = true) { home.openFireSettings() } }
         val gear = circle(Glyph.GEAR, "GlassOS") { close(instant = true) { home.openSettings() } }
-        body.addView(grid(listOfNotNull(power, wifi, dnd, audio, input, timer, pads, acc, pc, fire, gear)))
+        val buttons = grid(listOfNotNull(power, wifi, dnd, audio, input, timer, pads, acc, pc, fire, gear))
+        val update = Updater.available(ctx)
+        if (update == null) { body.addView(buttons); return }
+        // A newer GlassOS on GitHub: one quiet row under the buttons, nothing else changes.
+        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false }
+        col.addView(buttons)
+        col.addView(updateRow(update), LinearLayout.LayoutParams(-1, dpi(46f)).apply { topMargin = dpi(12f) })
+        body.addView(col, LayoutParams(-1, -2))
+    }
+
+    /** OK downloads the newer GlassOS and opens Android's installer; the row shows the download's progress. */
+    private fun updateRow(r: Updater.Release): View {
+        val ctx = context.applicationContext
+        var running = false
+        lateinit var v: RowView
+        v = row("Update GlassOS", r.version) {
+            if (running) return@row
+            running = true
+            v.valueView.text = "0%"
+            Thread {
+                val err = Updater.downloadAndInstall(ctx, r) { p -> ui.post { v.valueView.update("$p%") } }
+                ui.post {
+                    running = false
+                    v.valueView.text = r.version
+                    if (err != null) Toast.makeText(ctx, err, Toast.LENGTH_LONG).show()
+                }
+            }.apply { priority = Thread.MIN_PRIORITY }.start()
+        }
+        return v
     }
 
     private fun toggleDnd() {
