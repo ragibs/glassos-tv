@@ -56,6 +56,10 @@ were taken on the Android TV emulator (Now Playing with a test song).
   and Android TV or Google TV builds that keep their own home), GlassOS notices the stock home and covers it, so
   the Home button still lands in GlassOS.
 - **Starts at boot**, with the Fire TV boot logo handled correctly.
+- **Updates**: about every 12 hours GlassOS asks GitHub for this repository's releases. When a newer one is out, an
+  "Update GlassOS" row appears in Control Center; OK downloads it, checks it is signed like the installed GlassOS
+  and opens Android's installer, which asks you to confirm (the first time, allow GlassOS to install apps). Nothing
+  else is sent: the check is one request to `api.github.com`.
 - **First-run setup** in a few steps: your name (on-screen keyboard), your top-row apps, one-tap permissions and, on
   Android TV, a "Make GlassOS your home screen" step. The Top Shelf follows the TV's country; a profile photo and
   another country are in Settings.

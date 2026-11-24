@@ -84,6 +84,31 @@ keyPassword=...
 
 Without it, `assembleRelease` builds an unsigned APK. Contributors do not need this.
 
+### Publishing a release from GitHub
+
+The **Release** workflow (`.github/workflows/release.yml`) builds the signed APK and publishes it when a version tag
+is pushed. GlassOS checks this repository's releases (`Updater.REPO`) about every 12 hours and offers a newer one as
+a row in Control Center, which downloads it and opens Android's installer. An update only installs over a GlassOS
+signed with the same key, so always sign releases with the same keystore.
+
+Once, add these repository secrets (Settings > Secrets and variables > Actions):
+
+| Secret | Value |
+|---|---|
+| `KEYSTORE_BASE64` | The keystore file, base64: `base64 -i release.jks \| pbcopy` on macOS |
+| `KEYSTORE_PASSWORD` | `storePassword` from `keystore.properties` |
+| `KEY_ALIAS` | `keyAlias` |
+| `KEY_PASSWORD` | `keyPassword` |
+| `TMDB_API_KEY` | Optional: the TMDB key built into the release |
+
+For each release:
+
+1. Raise `versionCode` and set `versionName` in `app/build.gradle.kts` (for example `1.0.3-beta`), and merge it.
+2. Tag that commit with the same version and push the tag: `git tag v1.0.3-beta && git push origin v1.0.3-beta`.
+
+The workflow stops if the tag does not match `versionName`, if the secrets are missing or if the APK is not signed.
+A tag with a `-` (such as `-beta`) becomes a pre-release.
+
 With each release, update the APK name and its direct link in the README's Install section: releases are
 pre-releases, so GitHub's `releases/latest` link does not find them.
 

@@ -525,6 +525,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         if (::setup.isInitialized) setup.onReturned()
         updateTime()
         if (!worker.isShutdown) worker.execute { refreshTitles(prefs.scene, wallToken) }
+        if (!worker.isShutdown) worker.execute { Updater.checkIfStale(ctx) }
     }
 
     fun updateTime() {
