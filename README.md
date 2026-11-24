@@ -18,10 +18,12 @@ GlassOS is free software under the GNU GPL v3.
 | Control Center (Menu) | Settings |
 | ![First-run setup: permissions](docs/screenshots/setup.png) | ![First-run setup: home screen](docs/screenshots/setup_home_step.png) |
 | First-run setup, one-tap permissions | Android TV: make GlassOS your home screen |
+| ![Full-screen Now Playing](docs/screenshots/now-playing.png) | |
+| Full-screen Now Playing | |
 
 Home and Control Center are from a Fire TV Stick 4K using the Apple TV (unofficial) Top Shelf source. TMDB is the
-default source and looks the same, with trending titles from your own streaming apps. Settings and setup were taken
-on the Android TV emulator.
+default source and looks the same, with trending titles from your own streaming apps. Settings, setup and Now Playing
+were taken on the Android TV emulator (Now Playing with a test song).
 
 ## Features
 
@@ -43,10 +45,13 @@ on the Android TV emulator.
 - **Control Center** (Menu, or OK on the pill): the time and date, with tabs for your profile, the controls (Sleep,
   Wi-Fi, Do Not Disturb, Audio, Inputs on TVs with HDMI inputs such as Fire TV Edition TVs and the Fire TV Cube, a
   sleep timer, Controllers, Accessibility, Parental Controls on Fire TV), Now Playing (while something plays, with
-  its progress, and a full-screen view: the album art large on a blur of itself, tinted with the art's colour; OK
-  there opens the app's own player. With music playing, it also opens by itself after 3 minutes untouched on the
-  home, drifts slowly and dims after 15 minutes against burn-in) and VPN (while a VPN is on). On Android TV the
-  buttons open the standard Settings pages.
+  its progress and a button for the full-screen view) and VPN (while a VPN is on). On Android TV the buttons open the
+  standard Settings pages.
+- **Full-screen Now Playing**: the song that is playing, with its album art large on a blur of itself and tinted
+  with the art's colour. Open it from Control Center's Now Playing tab; with music playing it also opens by itself
+  after 3 minutes untouched on the home. OK opens the app's own player, Back closes. Made to be left on: songs fade
+  from one to the next, and the picture drifts slowly and dims after 15 minutes against burn-in. Works with any app
+  that shows in Now Playing, such as Spotify.
 - **Your Home button**: on Android TV GlassOS can be the default home app. Where the TV does not allow that (Fire TV,
   and Android TV or Google TV builds that keep their own home), GlassOS notices the stock home and covers it, so
   the Home button still lands in GlassOS.
