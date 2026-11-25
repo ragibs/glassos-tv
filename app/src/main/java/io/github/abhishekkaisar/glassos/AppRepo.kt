@@ -15,7 +15,11 @@ import android.graphics.drawable.Drawable
 import android.util.DisplayMetrics
 import java.io.File
 
-class AppEntry(val pkg: String, val label: String, val art: Bitmap?, val isBanner: Boolean, val color: Int)
+/** An app, or a TV input ([intent] set, [pkg] an [AppRepo.INPUT] key): inputs sit on the shelf and in the drawer too. */
+class AppEntry(val pkg: String, val label: String, val art: Bitmap?, val isBanner: Boolean, val color: Int,
+               val intent: Intent? = null) {
+    val isInput get() = intent != null
+}
 
 object AppRepo {
     /**
@@ -104,10 +108,37 @@ object AppRepo {
         // An image named after the package is that app's alone. One named after a label only counts when no other
         // app has the same name: two apps called YouTube each need their package name.
         val shared = labelled.groupingBy { norm(it.second) }.eachCount().filterValues { it > 1 }.keys
-        return labelled.map { (ri, label) ->
+        val list = labelled.map { (ri, label) ->
             val art = custom[norm(ri.activityInfo.packageName)] ?: custom[norm(label)]?.takeIf { norm(label) !in shared }
             entry(ctx, ri, label, art)
         }.sortedBy { it.label.lowercase() }
+        // The TV's inputs follow the apps, in the TV's own order.
+        val icons = Prefs(ctx).inputIcons
+        return list + TvInputs.list(ctx).map { inputEntry(ctx, it.id, it.label, it.intent, icons[it.id], custom) }
+    }
+
+    /** The key a TV input goes by in the dock, the drawer order and the hidden apps, in place of a package name. */
+    const val INPUT = "input:"
+
+    /**
+     * A TV input's tile: the user's own image named after the input, else banner art in [saved] style (or one
+     * guessed from the name).
+     */
+    private fun inputEntry(ctx: Context, id: String, label: String, intent: Intent, saved: String?, custom: Map<String, File>): AppEntry {
+        custom[norm(label)]?.let { f ->
+            customTile(ctx, f)?.let { (art, banner) ->
+                return AppEntry(INPUT + id, label, art, banner, if (banner) 0xFF2A3350.toInt() else dominant(art), intent)
+            }
+        }
+        val style = InputArt.style(saved, label)
+        return AppEntry(INPUT + id, label, InputArt.render(ctx, style, label), true, style.bottom, intent)
+    }
+
+    /** [e], an input, drawn again after its icon changed in [Prefs.inputIcons]. Runs off the main thread. */
+    fun restyle(ctx: Context, e: AppEntry): AppEntry {
+        val i = e.intent ?: return e
+        val id = e.pkg.removePrefix(INPUT)
+        return inputEntry(ctx, id, e.label, i, Prefs(ctx).inputIcons[id], customArt(ctx))
     }
 
     private fun entry(ctx: Context, ri: ResolveInfo, label: String, custom: File?): AppEntry {

@@ -364,7 +364,17 @@ class AppMenu(private val act: HomeScreen) : FrameLayout(act.ctx) {
         addView(panel, LayoutParams(dpi(380f), LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         val pad = dpi(18f)
         list.setPadding(pad, dpi(16f), pad, dpi(12f))
-        panel.addView(list, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        // A long list (a TV input's icons) scrolls inside the card, which stays within 80% of the screen's height.
+        val scroll = object : ScrollView(context) {
+            override fun onMeasure(w: Int, h: Int) =
+                super.onMeasure(w, MeasureSpec.makeMeasureSpec(resources.displayMetrics.heightPixels * 8 / 10, MeasureSpec.AT_MOST))
+            override fun onScrollChanged(l: Int, t: Int, ol: Int, ot: Int) {
+                super.onScrollChanged(l, t, ol, ot)
+                invalidateDeep(panel)
+            }
+        }.apply { isVerticalScrollBarEnabled = false; isVerticalFadingEdgeEnabled = true; setFadingEdgeLength(dpi(24f)) }
+        scroll.addView(list, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        panel.addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     }
 
     /** Shows [items] (label to action) under [heading]; [closed] runs whenever the card closes, before any action. */
