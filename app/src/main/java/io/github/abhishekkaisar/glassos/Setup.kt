@@ -35,7 +35,7 @@ private const val REQ_HOME = 8
  * ([open] with single = true), like the other steps there.
  */
 class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
-    enum class Step { WELCOME, NAME, PHOTO, COUNTRY, APPS, PERMISSIONS, HOME, DONE, TMDB_KEY, ABOUT, HIDDEN }
+    enum class Step { WELCOME, NAME, PHOTO, COUNTRY, APPS, PERMISSIONS, HOME, DONE, TMDB_KEY, ABOUT, HIDDEN, ALBUM }
 
     /** Fire TV cannot change its home app, so the home step is for Android TV and Google TV only. */
     private val fireTv = Platform.isFireTv(context)
@@ -163,6 +163,8 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
 
     private fun show(s: Step) {
         step = s
+        // The album step colours an error; every step starts in the usual grey.
+        subtitle.setTextColor(0xB3FFFFFF.toInt())
         // Steps with a scrolling list clip to the body, or the list draws over the buttons; the others leave room
         // for focus scaling.
         body.clipChildren = s == Step.COUNTRY || s == Step.APPS || s == Step.HIDDEN
@@ -182,6 +184,7 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
             Step.HOME -> homeStep()
             Step.DONE -> doneStep()
             Step.TMDB_KEY -> keyStep()
+            Step.ALBUM -> albumStep()
             Step.ABOUT -> aboutStep()
             Step.HIDDEN -> hiddenStep()
         }
@@ -252,6 +255,79 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
         body.addView(box, LayoutParams(-1, -2, Gravity.CENTER))
         navButton("Cancel") { back() }
         val go = navButton("Save", primary = true) { next() }
+        kb.firstKey()?.requestFocus()
+        kb.downTo(go)
+    }
+
+    /**
+     * The screensaver's Synology Photos album: the share link and its password, if it has one. Save checks the link
+     * first (the album opens and is listed), and keeps it only when it works; the screensaver then shows the album.
+     */
+    private fun albumStep() {
+        title.text = "Synology album"
+        val hint = "The album's share link from Synology Photos. A NAS on your home network: use its local IP address, " +
+            "https://<NAS IP>:5001/mo/sharing/… The password is only for albums that have one."
+        subtitle.text = hint
+        var link = prefs.synologyLink
+        var password = prefs.synologyPassword
+        var checking = false
+        val box = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false; clipToPadding = false }
+        val fields = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false; clipToPadding = false }
+        val linkField = Field(context, "Album link").apply { value = link; small = true; selectable(); active = true }
+        val passField = Field(context, "Password").apply { value = password; small = true; secret = true; selectable() }
+        fields.addView(linkField, LinearLayout.LayoutParams(dpi(350f), dpi(42f)))
+        fields.addView(passField, LinearLayout.LayoutParams(dpi(168f), dpi(42f)).apply { leftMargin = dpi(10f) })
+        box.addView(fields, LinearLayout.LayoutParams(-2, -2))
+        val kb = Keyboard(context, digits = true, capitalise = false, symbols = true) { k ->
+            if (checking) return@Keyboard
+            if (passField.active) { password = edit(password, k, 128); passField.value = password }
+            else { link = edit(link, k, 300, allowSpace = false); linkField.value = link }
+        }
+        box.addView(kb, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dpi(12f) })
+        body.addView(box, LayoutParams(-1, -2, Gravity.CENTER))
+        // Focus on a field makes it the one typed into; Down goes back to the keys.
+        linkField.onSelect = { linkField.active = true; passField.active = false }
+        passField.onSelect = { passField.active = true; linkField.active = false }
+        kb.upTo(linkField, passField)
+        navButton("Cancel") { back() }
+        lateinit var go: RowView
+        go = navButton("Check link", primary = true) {
+            if (checking) return@navButton
+            if (link.isBlank()) {
+                // An empty link turns the album off.
+                prefs.synologyLink = ""; prefs.synologyPassword = ""; prefs.synologyAlbum = ""; prefs.synologyCert = ""
+                if (prefs.screensaver == Screensaver.SYNOLOGY) prefs.screensaver = Screensaver.OFF
+                Synology.clear(context)
+                close()
+                return@navButton
+            }
+            checking = true
+            go.titleView.text = "Checking…"
+            subtitle.text = "Opening the album…"
+            val l = link.trim()
+            val pw = password
+            Thread {
+                val r = Synology.check(l, pw)
+                ui.post {
+                    if (!isOpen || step != Step.ALBUM) return@post
+                    checking = false
+                    go.titleView.text = "Check link"
+                    if (!r.ok) {
+                        subtitle.text = r.message
+                        subtitle.setTextColor(0xFFFF9F8A.toInt())
+                        return@post
+                    }
+                    if (l != prefs.synologyLink) Synology.clear(context)
+                    prefs.synologyLink = l
+                    prefs.synologyPassword = pw
+                    prefs.synologyAlbum = r.album
+                    prefs.synologyCert = r.cert
+                    prefs.screensaver = Screensaver.SYNOLOGY
+                    Toast.makeText(context, r.message + " The screensaver shows this album.", Toast.LENGTH_LONG).show()
+                    close()
+                }
+            }.apply { priority = Thread.MIN_PRIORITY }.start()
+        }
         kb.firstKey()?.requestFocus()
         kb.downTo(go)
     }
@@ -787,18 +863,44 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
         var value = ""
             set(v) { field = v; invalidate() }
         var small = false
+        /** Shown as dots (a password). */
+        var secret = false
+        /** The field the keyboard types into, when a step has two (outlined). */
+        var active = false
+            set(v) { field = v; invalidate() }
+        var onSelect: (() -> Unit)? = null
+
+        /** Lets focus land on the field: landing chooses it ([onSelect]). */
+        fun selectable() {
+            isFocusable = true
+            id = View.generateViewId()
+        }
+
+        override fun onFocusChanged(gained: Boolean, direction: Int, previous: Rect?) {
+            super.onFocusChanged(gained, direction, previous)
+            if (gained) onSelect?.invoke()
+            invalidate()
+        }
         private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
         private val rect = RectF()
         private val t = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Fonts.regular; color = Color.WHITE }
         override fun onDraw(c: Canvas) {
             rect.set(0f, 0f, width.toFloat(), height.toFloat())
-            fill.color = 0x26FFFFFF
+            fill.color = if (isFocused) 0x4DFFFFFF else 0x26FFFFFF
             c.drawRoundRect(rect, height / 2f, height / 2f, fill)
+            if (active || isFocused) {
+                fill.style = Paint.Style.STROKE
+                fill.strokeWidth = dp(1.5f)
+                fill.color = if (isFocused) Color.WHITE else 0x99FFFFFF.toInt()
+                rect.inset(dp(0.75f), dp(0.75f))
+                c.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, fill)
+                fill.style = Paint.Style.FILL
+            }
             t.textSize = dp(if (small) 15f else 22f)
             val pad = dp(22f)
             val empty = value.isEmpty()
             t.color = if (empty) 0x80FFFFFF.toInt() else Color.WHITE
-            var s = if (empty) hint else value
+            var s = if (empty) hint else if (secret) "•".repeat(value.length) else value
             // Long values (API keys) show their end, where typing happens.
             while (!empty && t.measureText("$s|") > width - 2 * pad && s.length > 1) s = s.substring(1)
             val y = height / 2f - (t.ascent() + t.descent()) / 2
@@ -832,10 +934,14 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
  * On-screen keyboard for the D-pad: letters (with Shift), optionally digits, space, delete and clear. Each key
  * turns white with dark text when focused, like the other glass buttons.
  */
-class Keyboard(ctx: Context, digits: Boolean, private val capitalise: Boolean = true, private val onKey: (String) -> Unit) : LinearLayout(ctx) {
+class Keyboard(ctx: Context, digits: Boolean, private val capitalise: Boolean = true, symbols: Boolean = false,
+               private val onKey: (String) -> Unit) : LinearLayout(ctx) {
     private var shift = capitalise
     private val letterKeys = ArrayList<Key>()
     private val rows = ArrayList<List<Key>>()
+    /** [symbols]: a key that swaps the number row for punctuation (links and passwords). */
+    private var symbolRow = false
+    private val numberChars = if (digits) "1234567890-_." else "1234567890-.'"
 
     init {
         orientation = VERTICAL
@@ -844,9 +950,11 @@ class Keyboard(ctx: Context, digits: Boolean, private val capitalise: Boolean = 
         val lines = ArrayList<List<String>>()
         lines.add("abcdefghijklm".map { it.toString() })
         lines.add("nopqrstuvwxyz".map { it.toString() })
-        lines.add(if (digits) "1234567890-_.".map { it.toString() } else "1234567890-.'".map { it.toString() })
+        lines.add(numberChars.map { it.toString() })
         for (l in lines) addRow(l.map { k -> Key(context, k, 1).also { if (k[0].isLetter()) letterKeys.add(it) } })
-        addRow(listOf(Key(context, SHIFT, 2), Key(context, " ", 5, "space"), Key(context, DEL, 3, "delete"), Key(context, CLEAR, 3, "clear")))
+        addRow(if (symbols) listOf(Key(context, SHIFT, 2), Key(context, SYMBOLS, 2, "#+="), Key(context, " ", 3, "space"),
+                Key(context, DEL, 3, "delete"), Key(context, CLEAR, 3, "clear"))
+            else listOf(Key(context, SHIFT, 2), Key(context, " ", 5, "space"), Key(context, DEL, 3, "delete"), Key(context, CLEAR, 3, "clear")))
         updateCase()
     }
 
@@ -864,6 +972,13 @@ class Keyboard(ctx: Context, digits: Boolean, private val capitalise: Boolean = 
     private fun press(k: Key) {
         when (k.value) {
             SHIFT -> { shift = !shift; updateCase(); return }
+            SYMBOLS -> {
+                symbolRow = !symbolRow
+                val chars = if (symbolRow) SYMBOL_CHARS else numberChars
+                rows[2].forEachIndexed { i, key -> key.value = chars[i].toString(); key.label = key.value }
+                k.label = if (symbolRow) "123" else "#+="
+                return
+            }
             else -> onKey(if (k.value.length == 1 && k.value[0].isLetter() && shift) k.value.uppercase() else k.value)
         }
         if (shift && k.value.length == 1 && k.value[0].isLetter()) { shift = false; updateCase() }
@@ -874,10 +989,20 @@ class Keyboard(ctx: Context, digits: Boolean, private val capitalise: Boolean = 
 
     fun firstKey(): View? = rows.firstOrNull()?.firstOrNull()
 
+    /** Up from the top row moves to [left] (the keys under it) or [right] (the rest). */
+    fun upTo(left: View, right: View) {
+        val top = rows.first()
+        top.forEachIndexed { i, k -> k.nextFocusUpId = if (i < top.size * 2 / 3) left.id else right.id }
+        left.nextFocusDownId = top.first().id
+        right.nextFocusDownId = top.last().id
+        left.nextFocusRightId = right.id
+        right.nextFocusLeftId = left.id
+    }
+
     /** Down from the last row moves to [v] (the Continue button). */
     fun downTo(v: View) { rows.lastOrNull()?.forEach { it.nextFocusDownId = v.id }; v.nextFocusUpId = rows.last()[1].id }
 
-    class Key(ctx: Context, val value: String, units: Int, display: String? = null) : View(ctx) {
+    class Key(ctx: Context, var value: String, units: Int, display: String? = null) : View(ctx) {
         val w = ctx.dpi(KEY * units + GAP * (units - 1))
         var label = display ?: if (value == SHIFT) "shift" else value
             set(v) { field = v; invalidate() }
@@ -905,6 +1030,9 @@ class Keyboard(ctx: Context, digits: Boolean, private val capitalise: Boolean = 
         const val SHIFT = "\u0001shift"
         const val DEL = "\u0001del"
         const val CLEAR = "\u0001clear"
+        const val SYMBOLS = "\u0001symbols"
+        /** The number row's other face: as many keys, for links and passwords. */
+        private const val SYMBOL_CHARS = ":/!@#$%&*?=+~"
         private const val KEY = 36f
         private const val GAP = 5f
     }

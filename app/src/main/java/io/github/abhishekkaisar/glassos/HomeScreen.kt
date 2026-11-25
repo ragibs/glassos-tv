@@ -67,6 +67,9 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private lateinit var content: FrameLayout
     private lateinit var shelf: GlassBox
     private lateinit var nowPlaying: NowPlayingScreen
+    private lateinit var screensaver: ScreensaverView
+    /** Where focus was when the screensaver opened. */
+    private var screensaverReturn: View? = null
     /** Where focus was when full-screen Now Playing opened. */
     private var nowPlayingReturn: View? = null
     private lateinit var gear: UserPill
@@ -151,6 +154,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         // The overlay is removed with Control Center open when it hands over to MainActivity.
         if (::cc.isInitialized) cc.release()
         if (::nowPlaying.isInitialized) nowPlaying.release()
+        if (::screensaver.isInitialized) screensaver.release()
         labelAnim?.cancel()
         main.removeCallbacksAndMessages(null)
         worker.shutdownNow()
@@ -283,6 +287,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         root.addView(cc, FrameLayout.LayoutParams(-1, -1))
         nowPlaying = NowPlayingScreen(this)
         root.addView(nowPlaying, FrameLayout.LayoutParams(-1, -1))
+        screensaver = ScreensaverView(this)
+        root.addView(screensaver, FrameLayout.LayoutParams(-1, -1))
         setup = SetupView(this)
         root.addView(setup, FrameLayout.LayoutParams(-1, -1))
         appMenu = AppMenu(this)
@@ -361,7 +367,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     fun updateHeroRunning() {
         if (!::hero.isInitialized || released) return
         hero.setRunning(resumed && currentRow == 0 && !settings.isOpen && !cc.isOpen && !setup.isOpen && !hero.isFocused && !editMode &&
-            movingPkg == null && !appMenu.isOpen && !nowPlaying.isOpen)
+            movingPkg == null && !appMenu.isOpen && !nowPlaying.isOpen && !screensaver.isOpen)
     }
 
     /**
@@ -499,19 +505,26 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         resumed = false
         main.removeCallbacks(idleCheck)
         if (::nowPlaying.isInitialized) nowPlaying.onHidden()
+        if (::screensaver.isInitialized) screensaver.close(instant = true)
         if (::appMenu.isInitialized) leaveMove()
     }
 
     private var resumedAt = 0L
 
-    /** Music playing and the home left alone for [NOW_PLAYING_IDLE_MS]: full-screen Now Playing opens by itself. */
+    /**
+     * The home left alone: with music playing, full-screen Now Playing opens after [NOW_PLAYING_IDLE_MS]; otherwise
+     * the screensaver, when one is chosen, after its own wait.
+     */
     private val idleCheck = object : Runnable {
         override fun run() {
             if (released || !resumed) return
             val idle = SystemClock.uptimeMillis() - maxOf(lastKeyAt, resumedAt)
-            if (idle >= NOW_PLAYING_IDLE_MS && !nowPlaying.isOpen && !settings.isOpen && !cc.isOpen && !setup.isOpen &&
-                !appMenu.isOpen && !editMode && movingPkg == null && NowPlaying.current(ctx)?.playing == true) {
-                openNowPlaying(auto = true)
+            val free = !nowPlaying.isOpen && !screensaver.isOpen && !settings.isOpen && !cc.isOpen && !setup.isOpen &&
+                !appMenu.isOpen && !editMode && movingPkg == null
+            if (free) {
+                val playing = NowPlaying.current(ctx)?.playing == true
+                if (playing && idle >= NOW_PLAYING_IDLE_MS) openNowPlaying(auto = true)
+                else if (!playing && prefs.screensaver != Screensaver.OFF && idle >= prefs.screensaverMinutes * 60_000L) openScreensaver(auto = true)
             }
             main.postDelayed(this, IDLE_CHECK_MS)
         }
@@ -1061,6 +1074,31 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         updateHeroRunning()
     }
 
+    /** The screensaver (by itself after a wait, or from Control Center and Settings). Focus goes back where it was. */
+    fun openScreensaver(auto: Boolean = false) {
+        if (screensaver.isOpen || nowPlaying.isOpen || setup.isOpen) return
+        if (prefs.screensaver == Screensaver.OFF) {
+            Toast.makeText(ctx, "Choose a screensaver in Settings first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (cc.isOpen) cc.close(instant = true)
+        if (settings.isOpen) settings.close(instant = true)
+        screensaverReturn = focused()
+        blockHome(true)
+        if (!screensaver.open(auto)) { blockHome(false); screensaverReturn = null; return }
+        updateHeroRunning()
+    }
+
+    fun onScreensaverClosed() {
+        blockHome(false)
+        // A key closed it: the wait starts again from now.
+        lastKeyAt = SystemClock.uptimeMillis()
+        val r = screensaverReturn
+        screensaverReturn = null
+        if (r != null && r.isAttachedToWindow && r.parent != null) r.requestFocus() else focusDock()
+        updateHeroRunning()
+    }
+
     fun onNowPlayingClosed() {
         blockHome(false)
         val r = nowPlayingReturn
@@ -1203,7 +1241,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             if (e.repeatCount > 0) return true
             eatOkUp = false
         }
-        if (settings.isOpen || cc.isOpen || appMenu.isOpen || nowPlaying.isOpen) return false
+        if (settings.isOpen || cc.isOpen || appMenu.isOpen || nowPlaying.isOpen || screensaver.isOpen) return false
         val focusTile = focused() as? TileView
         if (movingPkg != null) {
             // The hold that started the move keeps repeating until OK is let go: only a new press drops.
@@ -1260,6 +1298,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** Menu opens Control Center anywhere on the home; while an app is moving it opens the app's options. */
     private fun onMenu() {
         when {
+            screensaver.isOpen -> screensaver.close()
             nowPlaying.isOpen -> nowPlaying.close()
             cc.isOpen -> cc.close()
             settings.isOpen -> settings.close()
@@ -1273,6 +1312,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     fun onBack() {
         when {
             setup.isOpen -> setup.back()
+            screensaver.isOpen -> screensaver.close()
             nowPlaying.isOpen -> nowPlaying.close()
             cc.isOpen -> cc.back()
             settings.isOpen -> settings.close()
@@ -1287,10 +1327,11 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** Home pressed again while this home is shown: like tvOS, close what is open and keep focus. */
     fun onHomeAgain(fromWatcher: Boolean) {
         if (setup.isOpen) return
-        if (fromWatcher && !settings.isOpen && !cc.isOpen && !editMode && movingPkg == null && !appMenu.isOpen && !nowPlaying.isOpen) {
+        if (fromWatcher && !settings.isOpen && !cc.isOpen && !editMode && movingPkg == null && !appMenu.isOpen && !nowPlaying.isOpen && !screensaver.isOpen) {
             if (focused() == null) focusDock()
             return
         }
+        if (screensaver.isOpen) screensaver.close(instant = true)
         if (nowPlaying.isOpen) nowPlaying.close(instant = true)
         if (cc.isOpen) cc.close(instant = true)
         if (settings.isOpen) settings.close()

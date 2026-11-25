@@ -34,6 +34,11 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
     private val countryRow = RowView(context, "Country")
     private val shelfRow = RowView(context, "Top Shelf")
     private val keyRow = RowView(context, "TMDB API key")
+    private val saverRow = RowView(context, "Screensaver")
+    private val albumRow = RowView(context, "Album link")
+    private val saverWaitRow = RowView(context, "Start after")
+    private val saverSecondsRow = RowView(context, "Photo duration")
+    private val captionsRow = RowView(context, "Photo captions")
     private val appsRow = RowView(context, "Top row apps")
     private val hiddenRow = RowView(context, "Hidden apps")
     private val permsRow = RowView(context, "Permissions")
@@ -97,6 +102,11 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         list.addView(countryRow, rowLp())
         list.addView(shelfRow, rowLp())
         list.addView(keyRow, rowLp())
+        list.addView(saverRow, rowLp())
+        list.addView(albumRow, rowLp())
+        list.addView(saverWaitRow, rowLp())
+        list.addView(saverSecondsRow, rowLp())
+        list.addView(captionsRow, rowLp())
         // Above Focus sounds, whose Down goes to the chosen background thumbnail.
         list.addView(transparencyRow, rowLp())
         list.addView(soundRow, rowLp())
@@ -133,6 +143,28 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         photoRow.onClick = { step(photoRow, SetupView.Step.PHOTO) }
         countryRow.onClick = { step(countryRow, SetupView.Step.COUNTRY) }
         keyRow.onClick = { step(keyRow, SetupView.Step.TMDB_KEY) }
+        albumRow.onClick = { step(albumRow, SetupView.Step.ALBUM) }
+        // Choosing the album before a link is saved asks for the link; the album is chosen once it checks out.
+        saverRow.onClick = {
+            val ids = Screensaver.SOURCES.map { it.first }
+            val next = ids[(ids.indexOf(act.prefs.screensaver) + 1) % ids.size]
+            if (next == Screensaver.SYNOLOGY && act.prefs.synologyLink.isEmpty()) step(saverRow, SetupView.Step.ALBUM)
+            else { act.prefs.screensaver = next; updateValues() }
+        }
+        saverWaitRow.onClick = {
+            val m = Screensaver.MINUTES
+            act.prefs.screensaverMinutes = m[(m.indexOf(act.prefs.screensaverMinutes) + 1) % m.size]
+            updateValues()
+        }
+        saverSecondsRow.onClick = {
+            val s = Screensaver.SECONDS
+            act.prefs.screensaverSeconds = s[(s.indexOf(act.prefs.screensaverSeconds) + 1) % s.size]
+            updateValues()
+        }
+        captionsRow.onClick = {
+            act.prefs.screensaverCaptions = !act.prefs.screensaverCaptions
+            updateValues()
+        }
         appsRow.onClick = { step(appsRow, SetupView.Step.APPS) }
         hiddenRow.onClick = { step(hiddenRow, SetupView.Step.HIDDEN) }
         permsRow.onClick = { step(permsRow, SetupView.Step.PERMISSIONS) }
@@ -191,6 +223,18 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
             BuildConfig.TMDB_API_KEY.isNotEmpty() -> "Built in"
             else -> "Not set"
         }
+        val saver = act.prefs.screensaver
+        saverRow.valueView.text = Screensaver.label(saver)
+        albumRow.valueView.text = if (act.prefs.synologyLink.isEmpty()) "Not set" else act.prefs.synologyAlbum.ifEmpty { "Set" }
+        saverWaitRow.valueView.text = "${act.prefs.screensaverMinutes} min"
+        saverSecondsRow.valueView.text = "${act.prefs.screensaverSeconds} s"
+        captionsRow.valueView.text = if (act.prefs.screensaverCaptions) "On" else "Off"
+        // The link is the album's only: dimmed for the user's own photos and with the screensaver off.
+        albumRow.available = saver == Screensaver.SYNOLOGY
+        val on = saver != Screensaver.OFF
+        saverWaitRow.available = on
+        saverSecondsRow.available = on
+        captionsRow.available = on
         val grants = Grants.available(context)
         permsRow.valueView.text = "${grants.count { it.isGranted(context) }} of ${grants.size}"
         bgRow.valueView.text = WallpaperStore.label(act.prefs.scene)
