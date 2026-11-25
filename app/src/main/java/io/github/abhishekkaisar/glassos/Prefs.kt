@@ -34,6 +34,46 @@ class Prefs(ctx: Context) {
 
     val effectiveTmdbKey: String get() = tmdbKey.ifEmpty { BuildConfig.TMDB_API_KEY }
 
+    /** Settings > Screensaver: one of [Screensaver.SOURCES], [Screensaver.OFF] by default. */
+    var screensaver: String
+        get() = sp.getString("screensaver", Screensaver.OFF) ?: Screensaver.OFF
+        set(v) { sp.edit().putString("screensaver", v).apply() }
+
+    /** Minutes without a key on the home before the screensaver starts. */
+    var screensaverMinutes: Int
+        get() = sp.getInt("screensaverMinutes", 10)
+        set(v) { sp.edit().putInt("screensaverMinutes", v).apply() }
+
+    /** Seconds each landscape screensaver photo shows; a portrait one pans for half as long again. */
+    var screensaverSeconds: Int
+        get() = sp.getInt("screensaverSeconds", 15)
+        set(v) { sp.edit().putInt("screensaverSeconds", v).apply() }
+
+    /** The photo's title, date and place over the screensaver. */
+    var screensaverCaptions: Boolean
+        get() = sp.getBoolean("screensaverCaptions", true)
+        set(v) { sp.edit().putBoolean("screensaverCaptions", v).apply() }
+
+    /** A Synology Photos shared album link, checked before it was saved ([Synology.check]). */
+    var synologyLink: String
+        get() = sp.getString("synologyLink", "") ?: ""
+        set(v) { sp.edit().putString("synologyLink", v.trim()).apply() }
+
+    /** The shared album's password, when it has one. */
+    var synologyPassword: String
+        get() = sp.getString("synologyPassword", "") ?: ""
+        set(v) { sp.edit().putString("synologyPassword", v).apply() }
+
+    /** The album's name, shown in Settings and on the captions. */
+    var synologyAlbum: String
+        get() = sp.getString("synologyAlbum", "") ?: ""
+        set(v) { sp.edit().putString("synologyAlbum", v).apply() }
+
+    /** The certificate a NAS on the home network showed when its link was checked (see [Synology.Pin]). */
+    var synologyCert: String
+        get() = sp.getString("synologyCert", "") ?: ""
+        set(v) { sp.edit().putString("synologyCert", v).apply() }
+
     /** ISO 3166 country code for the Top Shelf region (streaming availability), once chosen in Settings. */
     var country: String
         get() = sp.getString("country", "") ?: ""

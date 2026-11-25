@@ -33,7 +33,7 @@ import android.widget.Toast
 import java.util.Locale
 
 /** Line glyphs for Control Center, drawn in a box of side s centred on (cx, cy). No vector assets. */
-enum class Glyph { NONE, POWER, WIFI, MOON, SPEAKER, TIMER, GAMEPAD, ACCESS, LOCK, GEAR, PEOPLE, PLAY, PAUSE, PREV, NEXT, SHIELD, TOGGLES, NOTE, CHECK, CLOSE, OPEN, INPUT, EXPAND }
+enum class Glyph { NONE, POWER, WIFI, MOON, SPEAKER, TIMER, GAMEPAD, ACCESS, LOCK, GEAR, PEOPLE, PLAY, PAUSE, PREV, NEXT, SHIELD, TOGGLES, NOTE, CHECK, CLOSE, OPEN, INPUT, EXPAND, PICTURE }
 
 object Glyphs {
     private val path = Path()
@@ -226,6 +226,20 @@ object Glyphs {
                 c.drawLine(cx - h * 0.45f, cy + h * 0.45f, cx + h * 0.55f, cy - h * 0.55f, p)
                 c.drawLine(cx - h * 0.1f, cy - h * 0.55f, cx + h * 0.55f, cy - h * 0.55f, p)
                 c.drawLine(cx + h * 0.55f, cy - h * 0.55f, cx + h * 0.55f, cy + h * 0.1f, p)
+            }
+            Glyph.PICTURE -> {
+                // A framed photo: hills and a sun.
+                r.set(cx - h * 0.9f, cy - h * 0.68f, cx + h * 0.9f, cy + h * 0.68f)
+                c.drawRoundRect(r, h * 0.16f, h * 0.16f, p)
+                path.reset()
+                path.moveTo(cx - h * 0.9f, cy + h * 0.5f)
+                path.lineTo(cx - h * 0.3f, cy - h * 0.1f)
+                path.lineTo(cx + h * 0.15f, cy + h * 0.32f)
+                path.lineTo(cx + h * 0.42f, cy + h * 0.08f)
+                path.lineTo(cx + h * 0.9f, cy + h * 0.5f)
+                c.drawPath(path, p)
+                p.style = Paint.Style.FILL
+                c.drawCircle(cx + h * 0.42f, cy - h * 0.3f, s * 0.07f, p)
             }
             Glyph.INPUT -> {
                 // A screen with an arrow coming into it from the left.
@@ -754,7 +768,10 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
             else circle(Glyph.LOCK, "Parental") { open(FireIntents.parental(), "com.amazon.tv.parentalcontrols", "Choose Preferences, then Parental Controls") }
         val fire = circle(Glyph.OPEN, "TV Settings") { close(instant = true) { home.openFireSettings() } }
         val gear = circle(Glyph.GEAR, "GlassOS") { close(instant = true) { home.openSettings() } }
-        val buttons = grid(listOfNotNull(power, wifi, dnd, audio, input, timer, pads, acc, pc, fire, gear))
+        // Starts the screensaver now; shown once one is chosen in Settings.
+        val saver = if (home.prefs.screensaver == Screensaver.OFF) null
+            else circle(Glyph.PICTURE, "Screensaver") { close(instant = true) { home.openScreensaver() } }
+        val buttons = grid(listOfNotNull(power, wifi, dnd, audio, input, timer, saver, pads, acc, pc, fire, gear))
         val update = Updater.available(ctx)
         if (update == null) { body.addView(buttons); return }
         // A newer GlassOS on GitHub: one quiet row under the buttons, nothing else changes.
