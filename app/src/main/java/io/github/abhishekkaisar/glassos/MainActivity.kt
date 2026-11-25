@@ -142,6 +142,10 @@ class MainActivity : Activity(), HomeHost {
         // Debug builds: `--ez demoMedia true|false` publishes a playing media session (Now Playing captures when no
         // app on the TV publishes one).
         if (debug && intent?.hasExtra("demoMedia") == true) { demoMedia(intent.getBooleanExtra("demoMedia", false)); return }
+        // Debug builds: `--ez demoInputs true|false` adds made-up HDMI inputs to the grid (emulators have none).
+        if (debug && intent?.hasExtra("demoInputs") == true) {
+            TvInputs.demo = intent.getBooleanExtra("demoInputs", false); home.loadApps(); return
+        }
         // Debug builds: `--ei sleepSec N` starts the sleep timer for N seconds (end-to-end test of the alarm and lockNow).
         if (debug && intent?.hasExtra("sleepSec") == true) { SleepTimer.start(this, intent.getIntExtra("sleepSec", 30) * 1000L); return }
         val fromWatcher = intent?.getBooleanExtra(HomeWatcher.EXTRA_FROM_WATCHER, false) == true

@@ -61,6 +61,14 @@ class Prefs(ctx: Context) {
         get() = sp.getString("hidden", null)?.split(',')?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
         set(v) { sp.edit().putString("hidden", v.joinToString(",")).apply() }
 
+    /** The icon chosen for each TV input, by input id ([InputArt.Style] names). Inputs not in it get a guess. */
+    var inputIcons: Map<String, String>
+        get() = sp.getString("inputIcons", null)?.split('\n')?.mapNotNull { e ->
+            val k = e.lastIndexOf('=')
+            if (k > 0) e.substring(0, k) to e.substring(k + 1) else null
+        }?.toMap() ?: emptyMap()
+        set(v) { sp.edit().putString("inputIcons", v.entries.joinToString("\n") { "${it.key}=${it.value}" }).apply() }
+
     var name: String
         get() = sp.getString("name", "") ?: ""
         set(v) { sp.edit().putString("name", v).apply() }

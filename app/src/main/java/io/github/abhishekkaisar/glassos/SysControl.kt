@@ -236,13 +236,16 @@ class NowPlaying(val controller: MediaController, val title: String, val subtitl
 
 /**
  * The TV's HDMI and other passthrough inputs (Fire TV Edition TVs, the Fire TV Cube, Android TVs with inputs), for
- * Control Center. Inputs are not installed apps, so the drawer cannot show them; each one opens in the TV's own player.
+ * Control Center and the app grid ([AppRepo.load] adds each as a tile). Each one opens in the TV's own player.
  */
 object TvInputs {
-    class Input(val label: String, val intent: Intent)
+    class Input(val id: String, val label: String, val intent: Intent)
+
+    /** Debug builds: `--ez demoInputs true` lists made-up inputs, for emulators and sticks, which have none. */
+    @Volatile var demo = false
 
     /** Every passthrough input the TV's player can open, by the name the user gave it. Empty on sticks and boxes. */
-    fun list(ctx: Context): List<Input> = try {
+    fun list(ctx: Context): List<Input> = if (demo) demoList(ctx) else try {
         val tim = ctx.getSystemService(Context.TV_INPUT_SERVICE) as? android.media.tv.TvInputManager
         tim?.tvInputList.orEmpty()
             .filter { it.isPassthroughInput && !(Build.VERSION.SDK_INT >= 24 && it.isHidden(ctx)) }
@@ -250,7 +253,12 @@ object TvInputs {
                 val i = Intent(Intent.ACTION_VIEW, android.media.tv.TvContract.buildChannelUriForPassthroughInput(info.id))
                 if (i.resolveActivity(ctx.packageManager) == null) return@mapNotNull null
                 val custom = if (Build.VERSION.SDK_INT >= 24) info.loadCustomLabel(ctx)?.toString() else null
-                Input(custom?.takeIf { it.isNotBlank() } ?: info.loadLabel(ctx).toString(), i)
+                Input(info.id, custom?.takeIf { it.isNotBlank() } ?: info.loadLabel(ctx).toString(), i)
             }
     } catch (e: Throwable) { emptyList() }
+
+    /** Opens Settings in place of a player. */
+    private fun demoList(ctx: Context): List<Input> = listOf("HDMI 1", "PS5", "Xbox Series X", "Switch", "Apple TV", "Steam Deck").mapIndexed { n, label ->
+        Input("demo/.HdmiInputService/HW${n + 1}", label, Platform.settingsIntent(ctx))
+    }
 }

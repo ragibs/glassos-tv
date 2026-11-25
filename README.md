@@ -42,6 +42,12 @@ were taken on the Android TV emulator (Now Playing with a test song).
   `Pictures/Glass/icons` folder. A wide image fills the tile like a TV banner; a square one sits centred on its own
   colour. It shows when you come back to Home (needs the Storage permission). When two apps have the same name, name
   the image after the package instead.
+- **HDMI inputs as tiles**, on TVs that have inputs (not sticks or boxes): each input sits in the drawer like an app and
+  can go on the top row. OK switches to it. Its glass icon is guessed from the name you gave the input on the TV ("PS5"
+  gets the PlayStation logo); to change it, hold OK on the tile, press Menu and choose **Change icon** (HDMI,
+  PlayStation, Xbox, Nintendo Switch, Steam, PC, Apple TV, Roku, NVIDIA Shield, Cable box, Blu-ray). An image named
+  after the input in `Pictures/Glass/icons` replaces it. Logos are from [Simple Icons](https://simpleicons.org) (CC0)
+  and belong to their owners.
 - **Control Center** (Menu, or OK on the pill): the time and date, with tabs for your profile, the controls (Sleep,
   Wi-Fi, Do Not Disturb, Audio, Inputs on TVs with HDMI inputs such as Fire TV Edition TVs and the Fire TV Cube, a
   sleep timer, Controllers, Accessibility, Parental Controls on Fire TV), Now Playing (while something plays, with

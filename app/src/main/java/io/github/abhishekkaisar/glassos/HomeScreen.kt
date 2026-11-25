@@ -768,6 +768,11 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     }
 
     fun launch(pkg: String, from: View?) {
+        // A TV input opens in the TV's own player.
+        apps.firstOrNull { it.pkg == pkg }?.intent?.let { i ->
+            host.startApp(Intent(i).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), Platform.handler(ctx, i), from)
+            return
+        }
         val pm = ctx.packageManager
         val i = pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg)
         if (i == null) {
@@ -962,16 +967,20 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         if ((t.tag as? Int) == 0) lastDockIndex = dockTiles.indexOf(t).coerceAtLeast(0)
     }
 
-    /** Menu while moving: add to or remove from the top row, or hide. Each action first drops the app where it is. */
+    /**
+     * Menu while moving: add to or remove from the top row, change a TV input's icon, or hide. Each action first
+     * drops the app where it is.
+     */
     private fun openAppMenu() {
         val pkg = movingPkg ?: return
         val app = apps.firstOrNull { it.pkg == pkg } ?: return
         val onShelf = pkg in dockPkgs
         blockHome(true)
         movePill.visibility = View.INVISIBLE
-        appMenu.open(app.label, listOf(
+        appMenu.open(app.label, listOfNotNull(
             (if (onShelf) "Remove from top row" else "Add to top row") to { dropMove(); toggleDock(pkg) },
-            "Hide app" to { dropMove(); hideApp(pkg) }
+            if (app.isInput) "Change icon" to { dropMove(); openIconMenu(app) } else null,
+            (if (app.isInput) "Hide input" else "Hide app") to { dropMove(); hideApp(pkg) }
         )) {
             blockHome(false)
             if (movingPkg != null) {
@@ -981,6 +990,39 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             updateHeroRunning()
         }
         updateHeroRunning()
+    }
+
+    /** The icons a TV input can have; the one it has now is ticked. */
+    private fun openIconMenu(app: AppEntry) {
+        val id = app.pkg.removePrefix(AppRepo.INPUT)
+        val now = InputArt.style(prefs.inputIcons[id], app.label)
+        blockHome(true)
+        appMenu.open("Icon for ${app.label}", InputArt.Style.values().map { st ->
+            (if (st == now) "${st.title}  ✓" else st.title) to { setInputIcon(app.pkg, st) }
+        }) {
+            blockHome(false)
+            tileOf(app.pkg)?.requestFocus()
+            updateHeroRunning()
+        }
+        updateHeroRunning()
+    }
+
+    /** Saves [style] for the input [pkg] and redraws its tile here and on the other home screen. */
+    private fun setInputIcon(pkg: String, style: InputArt.Style) {
+        val id = pkg.removePrefix(AppRepo.INPUT)
+        prefs.inputIcons = prefs.inputIcons + (id to style.name)
+        worker.execute {
+            val list = HomeShare.apps ?: return@execute
+            val restyled = list.map { if (it.pkg == pkg) AppRepo.restyle(ctx, it) else it }
+            // The user's own image for the input wins over any style (its tile keeps the image's colour).
+            val ownImage = restyled.firstOrNull { it.pkg == pkg }?.color != style.bottom
+            HomeShare.apps = restyled
+            ui {
+                if (ownImage) Toast.makeText(ctx, "This input uses its image in Pictures/Glass/icons", Toast.LENGTH_LONG).show()
+                applyApps(restyled)
+                HomeShare.main?.takeIf { it !== this }?.takeApps()
+            }
+        }
     }
 
     /** Ends move mode and the app menu (another panel is opening, or the home is being reset). */
