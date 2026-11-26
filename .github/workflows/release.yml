@@ -1,38 +1,55 @@
 name: Release
 
-# A version tag (v1.0.3, or v1.0.3-beta for a pre-release) builds the signed release APK and publishes it as a GitHub
-# release. GlassOS's update check (Updater.kt) finds it there and offers it in Control Center.
+# Every push to prod (a merged pull request) builds the signed release APK for the versionName in app/build.gradle.kts
+# and publishes it as a GitHub release tagged v<versionName> (v1.0.3, or v1.0.3-beta for a pre-release). A version that
+# is already released is skipped, so a push that did not raise the version publishes nothing. GlassOS's update check
+# (Updater.kt) finds the release and offers it in Control Center and Settings > Software update.
 #
 # Secrets (Settings > Secrets and variables > Actions): KEYSTORE_BASE64 (the keystore file, base64), KEYSTORE_PASSWORD,
 # KEY_ALIAS, KEY_PASSWORD, and optionally TMDB_API_KEY. See CONTRIBUTING.md.
 
 on:
   push:
-    tags: ['v*']
+    branches: [prod]
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read the version
+        id: version
+        run: |
+          name=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          if [ -z "$name" ]; then
+            echo "::error::No versionName in app/build.gradle.kts"
+            exit 1
+          fi
+          echo "tag=v$name" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$name" > /dev/null; then
+            echo "::notice::v$name is already released; nothing to publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-java@v4
+        if: steps.version.outputs.skip != 'true'
         with:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-
-      - name: Check the tag matches versionName
-        run: |
-          name=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
-          if [ "${GITHUB_REF_NAME#v}" != "$name" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match versionName \"$name\" in app/build.gradle.kts"
-            exit 1
-          fi
+        if: steps.version.outputs.skip != 'true'
 
       - name: Set up the signing key
+        if: steps.version.outputs.skip != 'true'
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -48,16 +65,19 @@ jobs:
             "$RUNNER_TEMP/release.jks" "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > "$RUNNER_TEMP/keystore.properties"
 
       - name: Build the release APK
+        if: steps.version.outputs.skip != 'true'
         env:
           GLASS_KEYSTORE_PROPERTIES: ${{ runner.temp }}/keystore.properties
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: ./gradlew assembleRelease
 
       - name: Publish the release
+        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          apk="GlassOS-$GITHUB_REF_NAME.apk"
+          apk="GlassOS-$TAG.apk"
           cp app/build/outputs/apk/release/app-release.apk "$apk"
           # An unsigned APK cannot update anyone's GlassOS: never publish one.
           cert=$(keytool -printcert -jarfile "$apk" | sed -n 's/.*SHA256: //p' | head -1)
@@ -67,7 +87,8 @@ jobs:
           fi
           sum=$(sha256sum "$apk" | cut -d' ' -f1)
           pre=""
-          case "$GITHUB_REF_NAME" in *-*) pre="--prerelease" ;; esac
+          case "$TAG" in *-*) pre="--prerelease" ;; esac
           printf 'APK SHA-256: `%s`\n\nSigning certificate SHA-256: `%s`\n' "$sum" "$cert" > notes.md
-          gh release create "$GITHUB_REF_NAME" "$apk" $pre --title "GlassOS $GITHUB_REF_NAME" --notes-file notes.md --generate-notes
+          # Creates the tag on the commit that was pushed to prod.
+          gh release create "$TAG" "$apk" $pre --target "$GITHUB_SHA" --title "GlassOS $TAG" --notes-file notes.md --generate-notes
           rm -f "$RUNNER_TEMP/release.jks" "$RUNNER_TEMP/keystore.properties"

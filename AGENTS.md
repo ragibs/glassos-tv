@@ -228,8 +228,19 @@ JDK 17 and the Android SDK (platform 34, build tools 34.0.0). No keys needed.
 ./gradlew assembleDebug lint     # app/build/outputs/apk/debug/app-debug.apk
 ```
 
-CI (`.github/workflows/build.yml`) runs the same command on every pull request and must pass. `main` is protected:
-open a pull request.
+CI (`.github/workflows/build.yml`) runs the same command on every pull request and must pass.
+
+## Branches and releases
+
+- `dev` is the default branch. Branch from it (`feat/...`, `fix/...`, `docs/...`) and open pull requests against it.
+- `prod` is what users run. **Every merge into `prod` publishes a release automatically**
+  (`.github/workflows/release.yml`): it builds the signed APK for the `versionName` in `app/build.gradle.kts`, tags
+  it `v<versionName>` and publishes it; a `versionName` with a `-` is a pre-release. Nothing else is needed: do not
+  push version tags by hand.
+- So a pull request into `prod` must raise the version: `versionCode` higher than `prod`'s and a new `versionName`.
+  CI fails it otherwise.
+- To release: raise the version on `dev` through a pull request, then open a pull request from `dev` into `prod`.
+  Changes only reach `prod` from `dev`; never commit to `prod` directly.
 
 ## Layout
 

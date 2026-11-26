@@ -4,7 +4,7 @@ on:
   workflow_dispatch :
   pull_request:
   push:
-    branches: [main]
+    branches: [dev]
 
 permissions:
   contents: read
@@ -25,3 +25,30 @@ jobs:
         with:
           name: glassos-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
+  # Every merge into prod is released (release.yml), so a pull request into prod must raise the version: a higher
+  # versionCode than prod's, and a versionName not released yet.
+  version:
+    if: github.base_ref == 'prod'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check the version was raised
+        run: |
+          read_version() { sed -n "s/.*$1 = \"\{0,1\}\([^\"]*\)\"\{0,1\}$/\1/p" "$2" | head -1; }
+          git show "origin/prod:app/build.gradle.kts" > prod.gradle.kts
+          code=$(read_version versionCode app/build.gradle.kts)
+          name=$(read_version versionName app/build.gradle.kts)
+          prod_code=$(read_version versionCode prod.gradle.kts)
+          prod_name=$(read_version versionName prod.gradle.kts)
+          echo "prod: $prod_name ($prod_code), this pull request: $name ($code)"
+          if [ -z "$code" ] || [ -z "$prod_code" ] || [ "$code" -le "$prod_code" ]; then
+            echo "::error::Raise versionCode in app/build.gradle.kts above prod's ($prod_code) and set a new versionName: every merge into prod is released"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$name" > /dev/null; then
+            echo "::error::v$name is already released: set a new versionName in app/build.gradle.kts"
+            exit 1
+          fi
