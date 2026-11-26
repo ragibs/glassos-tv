@@ -46,16 +46,24 @@ that both platforms share, say in the pull request what you could and could not 
 
 ## Pull requests
 
-1. Fork the repository and branch from `main`.
+1. Fork the repository and branch from `dev`.
 2. Keep a change to one thing. Add screenshots for any UI change.
-3. Open a pull request against `main` and fill in the template.
-4. `main` is protected: changes arrive through pull requests, and the CI build must pass.
+3. Open a pull request against `dev` and fill in the template.
+4. Changes arrive through pull requests, and the CI build must pass.
+
+There are two long-lived branches:
+
+- `dev` (the default branch): where work lands. Nothing is released from it.
+- `prod`: what users run. **Every merge into `prod` publishes a release** (see below), so a pull request into
+  `prod` must raise the version; CI fails it otherwise. Only the maintainer opens pull requests into `prod`, from
+  `dev`.
 
 ## What CI checks
 
-The **Build** workflow runs on every pull request and every push to `main`. It builds the debug APK with
+The **Build** workflow runs on every pull request and every push to `dev`. It builds the debug APK with
 `./gradlew assembleDebug lint` using no TMDB key and no signing key, and uploads the APK as an artifact so you can
-install it from the run page. It does not run on a device.
+install it from the run page. It does not run on a device. On a pull request into `prod` it also checks that the
+version was raised: `versionCode` higher than `prod`'s, and a `versionName` that has no release yet.
 
 ## Code style
 
@@ -86,8 +94,9 @@ Without it, `assembleRelease` builds an unsigned APK. Contributors do not need t
 
 ### Publishing a release from GitHub
 
-The **Release** workflow (`.github/workflows/release.yml`) builds the signed APK and publishes it when a version tag
-is pushed. GlassOS checks this repository's releases (`Updater.REPO`) about every 12 hours and offers a newer one as
+The **Release** workflow (`.github/workflows/release.yml`) runs on every push to `prod`. It builds the signed APK
+for the `versionName` in `app/build.gradle.kts` and publishes it as a release tagged `v<versionName>`, creating the
+tag itself; a version that is already released is skipped. GlassOS checks this repository's releases (`Updater.REPO`) about every 12 hours and offers a newer one as
 a row in Control Center, which downloads it and opens Android's installer. An update only installs over a GlassOS
 signed with the same key, so always sign releases with the same keystore.
 
@@ -103,11 +112,13 @@ Once, add these repository secrets (Settings > Secrets and variables > Actions):
 
 For each release:
 
-1. Raise `versionCode` and set `versionName` in `app/build.gradle.kts` (for example `1.0.3-beta`), and merge it.
-2. Tag that commit with the same version and push the tag: `git tag v1.0.3-beta && git push origin v1.0.3-beta`.
+1. On `dev`, raise `versionCode` and set `versionName` in `app/build.gradle.kts` (for example `1.0.3-beta`), through
+   a pull request as usual.
+2. Open a pull request from `dev` into `prod` and merge it once CI passes. The release is published a few minutes
+   later. No tag to push.
 
-The workflow stops if the tag does not match `versionName`, if the secrets are missing or if the APK is not signed.
-A tag with a `-` (such as `-beta`) becomes a pre-release.
+The workflow stops if the secrets are missing or if the APK is not signed. A `versionName` with a `-` (such as
+`-beta`) becomes a pre-release.
 
 With each release, update the APK name and its direct link in the README's Install section: releases are
 pre-releases, so GitHub's `releases/latest` link does not find them.
