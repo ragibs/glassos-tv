@@ -44,6 +44,9 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
     private val permsRow = RowView(context, "Permissions")
     private val setupRow = RowView(context, "Run setup again")
     private val aboutRow = RowView(context, "About")
+    /** Shows the installed version; OK asks GitHub for a newer one, and installs it once one is found. */
+    private val softwareRow = RowView(context, "Software update")
+    private var updating = false
     private val uninstallRow = RowView(context, "Prepare to uninstall")
     private val soundRow = RowView(context, "Focus sounds")
     private val transparencyRow = RowView(context, "Reduce transparency")
@@ -136,6 +139,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         if (Platform.stockHome(context) != null) list.addView(fireHomeRow, rowLp())
         list.addView(setupRow, rowLp())
         list.addView(uninstallRow, rowLp())
+        list.addView(softwareRow, rowLp())
         list.addView(aboutRow, rowLp())
 
         fun step(row: View, s: SetupView.Step) { resumeRow = row; act.openSetup(s, single = true) }
@@ -171,6 +175,9 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         homeAppRow.onClick = { step(homeAppRow, SetupView.Step.HOME) }
         setupRow.onClick = { resumeRow = setupRow; act.openSetup() }
         aboutRow.onClick = { step(aboutRow, SetupView.Step.ABOUT) }
+        softwareRow.onClick = {
+            if (!updating) Updater.available(context)?.let { installUpdate(it) } ?: checkForUpdate()
+        }
         // Device admin blocks uninstalling; an app may always remove its own admin.
         uninstallRow.onClick = {
             Power.removeAdmin(context)
@@ -210,6 +217,46 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         editRow.valueView.textSize = 24f
     }
 
+    /** The installed version, or the newer one waiting to be installed. */
+    private fun showVersion() {
+        softwareRow.valueView.text = Updater.available(context)?.let { "Install ${it.version}" } ?: Updater.current(context)
+    }
+
+    private fun checkForUpdate() {
+        val app = context.applicationContext
+        updating = true
+        softwareRow.valueView.text = "Checking…"
+        Thread {
+            val reached = Updater.check(app)
+            val r = Updater.available(app)
+            post {
+                updating = false
+                showVersion()
+                val msg = when {
+                    !reached -> "Could not reach GitHub. Try again later."
+                    r == null -> "GlassOS ${Updater.current(app)} is up to date"
+                    else -> "GlassOS ${r.version} is available. Press OK again to install it."
+                }
+                android.widget.Toast.makeText(app, msg, android.widget.Toast.LENGTH_LONG).show()
+            }
+        }.apply { priority = Thread.MIN_PRIORITY }.start()
+    }
+
+    /** Downloads [r] and opens Android's installer, as Control Center's update row does; the row shows the progress. */
+    private fun installUpdate(r: Updater.Release) {
+        val app = context.applicationContext
+        updating = true
+        softwareRow.valueView.text = "0%"
+        Thread {
+            val err = Updater.downloadAndInstall(app, r) { p -> post { if (softwareRow.valueView.text.toString() != "$p%") softwareRow.valueView.text = "$p%" } }
+            post {
+                updating = false
+                showVersion()
+                if (err != null) android.widget.Toast.makeText(app, err, android.widget.Toast.LENGTH_LONG).show()
+            }
+        }.apply { priority = Thread.MIN_PRIORITY }.start()
+    }
+
     private fun updateValues() {
         soundRow.valueView.text = if (act.prefs.sound) "On" else "Off"
         transparencyRow.valueView.text = if (act.prefs.reduceTransparency) "On" else "Off"
@@ -229,6 +276,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         saverWaitRow.valueView.text = "${act.prefs.screensaverMinutes} min"
         saverSecondsRow.valueView.text = "${act.prefs.screensaverSeconds} s"
         captionsRow.valueView.text = if (act.prefs.screensaverCaptions) "On" else "Off"
+        if (!updating) showVersion()
         // The link is the album's only: dimmed for the user's own photos and with the screensaver off.
         albumRow.available = saver == Screensaver.SYNOLOGY
         val on = saver != Screensaver.OFF

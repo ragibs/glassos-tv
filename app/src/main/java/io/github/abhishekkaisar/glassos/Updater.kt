@@ -50,16 +50,24 @@ object Updater {
         val ok = File(d, "checked")
         val tried = File(d, "tried")
         if (now - ok.lastModified() < CHECK_MS || now - tried.lastModified() < RETRY_MS) return
-        try { tried.writeText("") } catch (e: Throwable) { }
+        check(ctx)
+    }
+
+    /** Asks GitHub now (Settings > Software update). False when GitHub could not be reached. Off the UI thread. */
+    fun check(ctx: Context): Boolean {
+        val d = dir(ctx)
+        val ok = File(d, "checked")
+        try { File(d, "tried").writeText("") } catch (e: Throwable) { }
         val (code, body) = HeroRepo.get("https://api.github.com/repos/$REPO/releases?per_page=10",
             mapOf("Accept" to "application/vnd.github+json"))
-        if (code != 200 || body == null) { WLog.i("update check -> $code"); return }
+        if (code != 200 || body == null) { WLog.i("update check -> $code"); return false }
         val best = try { newest(JSONArray(body), current(ctx)) } catch (e: Throwable) { null }
         val f = File(d, "release.json")
         if (best == null) f.delete()
         else f.writeText(JSONObject().put("tag", best.tag).put("version", best.version).put("apk", best.apkUrl).put("size", best.size).toString())
         try { ok.writeText("") } catch (e: Throwable) { }
         WLog.i("update check: ${best?.version ?: "up to date"}")
+        return true
     }
 
     /** The newest published release with an APK that is newer than [cur]. */

@@ -65,7 +65,8 @@ were taken on the Android TV emulator (Now Playing with a test song).
 - **Updates**: about every 12 hours GlassOS asks GitHub for this repository's releases. When a newer one is out, an
   "Update GlassOS" row appears in Control Center; OK downloads it, checks it is signed like the installed GlassOS
   and opens Android's installer, which asks you to confirm (the first time, allow GlassOS to install apps). Nothing
-  else is sent: the check is one request to `api.github.com`.
+  else is sent: the check is one request to `api.github.com`. Settings > **Software update** shows the installed
+  version; OK there checks at once, and OK again installs a newer one it found.
 - **First-run setup** in a few steps: your name (on-screen keyboard), your top-row apps, one-tap permissions and, on
   Android TV, a "Make GlassOS your home screen" step. The Top Shelf follows the TV's country; a profile photo and
   another country are in Settings.
