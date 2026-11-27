@@ -12,10 +12,21 @@ import android.graphics.RectF
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.InputType
+import android.text.Selection
+import android.text.SpannableStringBuilder
 import android.text.TextPaint
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.BaseInputConnection
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedText
+import android.view.inputmethod.ExtractedTextRequest
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
@@ -115,6 +126,7 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
     private fun close() {
         if (!isOpen) return
         isOpen = false
+        hideIme()
         animate().alpha(0f).setDuration(180).withEndAction {
             visibility = View.GONE
             body.removeAllViews(); nav.removeAllViews()
@@ -122,6 +134,14 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
         home.onSetupClosed()
         onClosed?.invoke()
         onClosed = null
+    }
+
+    /**
+     * Closes the TV's own keyboard, if the input method opened it over a step (it does when typed into from a
+     * keyboard); the next step may have nothing to type into.
+     */
+    private fun hideIme() {
+        (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)?.hideSoftInputFromWindow(windowToken, 0)
     }
 
     /** Back: the previous step, or closes a single step without saving. The first step stays. */
@@ -163,6 +183,7 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
 
     private fun show(s: Step) {
         step = s
+        hideIme()
         // The album step colours an error; every step starts in the usual grey.
         subtitle.setTextColor(0xB3FFFFFF.toInt())
         // Steps with a scrolling list clip to the body, or the list draws over the buttons; the others leave room
@@ -231,10 +252,13 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
             name = edit(name, k, 24)
             field.value = name
         }
+        kb.current = { name }
+        kb.hint = "Your name"
         box.addView(kb, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dpi(12f) })
         body.addView(box, LayoutParams(-1, -2, Gravity.CENTER))
         if (!single) navButton("Back") { back() }
         val go = navButton(continueLabel(), primary = true) { next() }
+        kb.onDone = { go.performClick() }
         kb.firstKey()?.requestFocus()
         kb.downTo(go)
     }
@@ -251,10 +275,13 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
             keyText = edit(keyText, k, 400, allowSpace = false)
             field.value = keyText
         }
+        kb.current = { keyText }
+        kb.hint = "API key"
         box.addView(kb, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dpi(12f) })
         body.addView(box, LayoutParams(-1, -2, Gravity.CENTER))
         navButton("Cancel") { back() }
         val go = navButton("Save", primary = true) { next() }
+        kb.onDone = { go.performClick() }
         kb.firstKey()?.requestFocus()
         kb.downTo(go)
     }
@@ -285,9 +312,20 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
         }
         box.addView(kb, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dpi(12f) })
         body.addView(box, LayoutParams(-1, -2, Gravity.CENTER))
+        kb.current = { if (passField.active) password else link }
+        kb.hint = "Album link"
+        linkField.keyboard = kb
+        passField.keyboard = kb
         // Focus on a field makes it the one typed into; Down goes back to the keys.
-        linkField.onSelect = { linkField.active = true; passField.active = false }
-        passField.onSelect = { passField.active = true; linkField.active = false }
+        fun select(pass: Boolean) {
+            val changed = passField.active != pass
+            passField.active = pass; linkField.active = !pass
+            kb.secret = pass
+            kb.hint = if (pass) "Password" else "Album link"
+            if (changed) kb.restartInput()
+        }
+        linkField.onSelect = { select(false) }
+        passField.onSelect = { select(true) }
         kb.upTo(linkField, passField)
         navButton("Cancel") { back() }
         lateinit var go: RowView
@@ -328,6 +366,7 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
                 }
             }.apply { priority = Thread.MIN_PRIORITY }.start()
         }
+        kb.onDone = { go.performClick() }
         kb.firstKey()?.requestFocus()
         kb.downTo(go)
     }
@@ -869,6 +908,15 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
         var active = false
             set(v) { field = v; invalidate() }
         var onSelect: (() -> Unit)? = null
+        /** Typing from a keyboard or the input method goes to [keyboard] while the field has focus. */
+        var keyboard: Keyboard? = null
+
+        override fun onCheckIsTextEditor() = keyboard != null
+        override fun onCreateInputConnection(out: EditorInfo): InputConnection? = keyboard?.inputConnection(this, out)
+        override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean =
+            keyboard?.typeKey(event) == true || super.onKeyDown(keyCode, event)
+        override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
+            keyboard?.typeKey(event) == true || super.onKeyUp(keyCode, event)
 
         /** Lets focus land on the field: landing chooses it ([onSelect]). */
         fun selectable() {
@@ -933,6 +981,10 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
 /**
  * On-screen keyboard for the D-pad: letters (with Shift), optionally digits, space, delete and clear. Each key
  * turns white with dark text when focused, like the other glass buttons.
+ *
+ * It also takes typing from elsewhere: a USB or Bluetooth keyboard (key events), and the TV's input method, which
+ * is how the Google TV phone app types. For the input method the keys (and [Field]s set to it) count as a text
+ * field, without opening the TV's own keyboard over this one.
  */
 class Keyboard(ctx: Context, digits: Boolean, private val capitalise: Boolean = true, symbols: Boolean = false,
                private val onKey: (String) -> Unit) : LinearLayout(ctx) {
@@ -942,6 +994,26 @@ class Keyboard(ctx: Context, digits: Boolean, private val capitalise: Boolean = 
     /** [symbols]: a key that swaps the number row for punctuation (links and passwords). */
     private var symbolRow = false
     private val numberChars = if (digits) "1234567890-_." else "1234567890-.'"
+
+    /** The text being edited, shown to the input method (the phone app shows it). */
+    var current: () -> String = { "" }
+    /** The field's name for the input method. */
+    var hint = ""
+    /** The field being edited is a password (the phone app hides it). */
+    var secret = false
+    /** Done or Enter on the phone. */
+    var onDone: (() -> Unit)? = null
+    /** Characters at the end that the input method is still composing (see [Connection]). */
+    private var composing = 0
+    /** The input method's request to follow the text (see [Connection.getExtractedText]), or -1. */
+    private var extractToken = -1
+    /**
+     * The last text came from the phone or a keyboard, not the keys here: Enter is then Done, as in a text field.
+     * Otherwise Enter presses the focused key, as OK does (some remotes send Enter for OK).
+     */
+    private var typing = false
+    /** The Enter press that was taken as Done, so its release does not press a key. */
+    private var enterDone = false
 
     init {
         orientation = VERTICAL
@@ -963,6 +1035,7 @@ class Keyboard(ctx: Context, digits: Boolean, private val capitalise: Boolean = 
         keys.forEachIndexed { i, k ->
             k.id = View.generateViewId()
             k.onClick = { press(k) }
+            k.keyboard = this
             row.addView(k, LayoutParams(k.w, dpi(KEY), 0f).apply { if (i > 0) leftMargin = dpi(GAP) })
         }
         addView(row, LayoutParams(-2, -2).apply { if (rows.isNotEmpty()) topMargin = dpi(GAP) })
@@ -983,6 +1056,156 @@ class Keyboard(ctx: Context, digits: Boolean, private val capitalise: Boolean = 
         }
         if (shift && k.value.length == 1 && k.value[0].isLetter()) { shift = false; updateCase() }
         if (k.value == " " && capitalise) { shift = true; updateCase() }
+        composing = 0
+        typing = false
+        textChanged()
+    }
+
+    // ---------- Typing from a keyboard or the input method ----------
+
+    private fun type(s: CharSequence) {
+        for (ch in s) if (!Character.isISOControl(ch)) onKey(ch.toString())
+    }
+
+    private fun delete(n: Int) { repeat(n) { onKey(DEL) } }
+
+    /** A typed key from a hardware keyboard (or a remote that sends letters as keys); false for anything else. */
+    fun typeKey(e: KeyEvent): Boolean {
+        if (e.isCtrlPressed || e.isAltPressed || e.isMetaPressed) return false
+        if (e.keyCode == KeyEvent.KEYCODE_ENTER || e.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) enterDone = typing
+            if (!enterDone) return false
+            if (e.action == KeyEvent.ACTION_UP) { enterDone = false; typing = false; onDone?.invoke() }
+            return true
+        }
+        val del = e.keyCode == KeyEvent.KEYCODE_DEL
+        val ch = e.unicodeChar
+        if (!del && (ch == 0 || Character.isISOControl(ch))) return false
+        if (e.action == KeyEvent.ACTION_DOWN) {
+            if (del) onKey(DEL) else type(String(Character.toChars(ch)))
+            composing = 0
+            typing = true
+            textChanged()
+        }
+        return true
+    }
+
+    override fun dispatchKeyEvent(e: KeyEvent): Boolean = typeKey(e) || super.dispatchKeyEvent(e)
+
+    /** Tells the input method the text changed here, so the phone app shows it. */
+    fun textChanged() {
+        val v = findFocus() ?: (rootView.findFocus()?.takeIf { it.onCheckIsTextEditor() }) ?: return
+        val n = current().length
+        val imm = imm() ?: return
+        if (extractToken >= 0) imm.updateExtractedText(v, extractToken, extracted())
+        imm.updateSelection(v, n, n, -1, -1)
+    }
+
+    /** The whole text, with the cursor at its end. */
+    private fun extracted() = ExtractedText().apply {
+        text = current()
+        startOffset = 0
+        partialStartOffset = -1
+        partialEndOffset = -1
+        selectionStart = text.length
+        selectionEnd = text.length
+        flags = ExtractedText.FLAG_SINGLE_LINE
+    }
+
+    /** Restarts the input method on the focused field, when what it edits changed (Album link to Password). */
+    fun restartInput() {
+        val v = rootView.findFocus()?.takeIf { it.onCheckIsTextEditor() } ?: return
+        imm()?.restartInput(v)
+    }
+
+    private fun imm() = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+
+    /** The input method's connection, for [v] (a key or a field) that has focus. */
+    fun inputConnection(v: View, out: EditorInfo): InputConnection {
+        out.inputType = InputType.TYPE_CLASS_TEXT or when {
+            secret -> InputType.TYPE_TEXT_VARIATION_PASSWORD
+            capitalise -> InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            else -> InputType.TYPE_TEXT_VARIATION_URI or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        out.imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
+        out.hintText = hint
+        out.initialSelStart = current().length
+        out.initialSelEnd = out.initialSelStart
+        extractToken = -1
+        return Connection(v)
+    }
+
+    /**
+     * Turns the input method's edits into key presses on [onKey]. The text is only ever edited at its end, so an
+     * edit becomes deletes back to where it starts, then typing. Composing text (a word still being typed, or one
+     * the input method marked to replace with a suggestion) is the end of the text, [composing] characters long.
+     */
+    private inner class Connection(v: View) : BaseInputConnection(v, true) {
+        private val buf = SpannableStringBuilder()
+
+        override fun getEditable(): Editable {
+            val s = current()
+            if (buf.toString() != s) buf.replace(0, buf.length, s)
+            Selection.setSelection(buf, buf.length)
+            return buf
+        }
+
+        /** Replaces the last [n] characters with [s]; returns how many of [s] landed (a field can drop some). */
+        private fun replaceEnd(n: Int, s: CharSequence): Int {
+            delete(minOf(n, current().length))
+            val before = current().length
+            type(s)
+            typing = true
+            textChanged()
+            return maxOf(0, current().length - before)
+        }
+
+        /** Characters from [start] to the end; -1 when [start]..[end] is not at the end (not editable here). */
+        private fun tail(start: Int, end: Int): Int {
+            val len = current().length
+            val a = minOf(start, end).coerceIn(0, len)
+            return if (maxOf(start, end) >= len) len - a else -1
+        }
+
+        override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+            replaceEnd(composing, text ?: ""); composing = 0; return true
+        }
+
+        override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
+            composing = replaceEnd(composing, text ?: ""); return true
+        }
+
+        override fun setComposingRegion(start: Int, end: Int): Boolean {
+            composing = maxOf(0, tail(start, end)); return true
+        }
+
+        override fun finishComposingText(): Boolean { composing = 0; return true }
+
+        // Gboard reads the text from here to tell the phone app about the field; without it the app has no field
+        // to type into.
+        override fun getExtractedText(request: ExtractedTextRequest?, flags: Int): ExtractedText {
+            if (flags and InputConnection.GET_EXTRACTED_TEXT_MONITOR != 0) extractToken = request?.token ?: 0
+            return extracted()
+        }
+
+        override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+            composing = 0
+            replaceEnd(beforeLength, "")
+            return true
+        }
+
+        override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean {
+            val s = current()
+            val n = if (beforeLength >= s.codePointCount(0, s.length)) s.length
+                else s.length - s.offsetByCodePoints(s.length, -beforeLength)
+            return deleteSurroundingText(n, 0)
+        }
+
+        override fun performEditorAction(actionCode: Int): Boolean {
+            composing = 0
+            onDone?.invoke()
+            return true
+        }
     }
 
     private fun updateCase() { letterKeys.forEach { it.label = if (shift) it.value.uppercase() else it.value } }
@@ -1007,11 +1230,14 @@ class Keyboard(ctx: Context, digits: Boolean, private val capitalise: Boolean = 
         var label = display ?: if (value == SHIFT) "shift" else value
             set(v) { field = v; invalidate() }
         var onClick: (() -> Unit)? = null
+        var keyboard: Keyboard? = null
         private val focus = FocusAnim(this, 1.12f) { invalidate() }
         private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
         private val rect = RectF()
         private val t = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Fonts.medium; textAlign = Paint.Align.CENTER }
         init { isFocusable = true; isClickable = true; setOnClickListener { onClick?.invoke() } }
+        override fun onCheckIsTextEditor() = keyboard != null
+        override fun onCreateInputConnection(out: EditorInfo): InputConnection? = keyboard?.inputConnection(this, out)
         override fun onFocusChanged(gained: Boolean, direction: Int, previous: Rect?) {
             super.onFocusChanged(gained, direction, previous); focus.set(gained)
         }
