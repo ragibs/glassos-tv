@@ -33,8 +33,8 @@ android {
         applicationId = "io.github.abhishekkaisar.glassos"
         minSdk = 22
         targetSdk = 28
-        versionCode = 6
-        versionName = "1.0.5-beta"
+        versionCode = 7
+        versionName = "1.0.6-beta"
         buildConfigField("String", "TMDB_API_KEY", "\"${tmdbKey.replace("\"", "")}\"")
     }
 
