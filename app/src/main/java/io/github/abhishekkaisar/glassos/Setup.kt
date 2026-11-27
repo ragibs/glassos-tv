@@ -873,7 +873,7 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
 
     private fun doneStep() {
         title.text = "You are all set"
-        subtitle.text = "Press Menu any time for Control Center. Hold OK on an app to move it.\nAdd a profile photo in Control Center > GlassOS."
+        subtitle.text = "Press Menu any time for Control Center. Hold OK on an app for its options.\nAdd a profile photo in Control Center > GlassOS."
         val av = AvatarPreview(context, dpi(110f))
         val f = Profile.photoFile(context)
         if (f.exists()) av.bitmap = android.graphics.BitmapFactory.decodeFile(f.path)

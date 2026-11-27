@@ -270,7 +270,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             setPadding(ctx.dpi(18f), 0, ctx.dpi(18f), 0)
         }
         movePill.addView(TextView(ctx).apply {
-            text = "Arrows to move · OK to drop · Menu for options · Back to cancel"
+            text = "Arrows to move · OK to drop · Back to cancel"
             textSize = 14f
             typeface = Fonts.regular
             setTextColor(0xF2FFFFFF.toInt())
@@ -710,7 +710,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         t.tag = row
         // Read the tile's app at click time: a move swaps apps between tiles in place.
         t.onClick = { val a = t.app; if (!editMode && a != null) launch(a.pkg, t) }
-        t.onLongPress = { if (!editMode) startMove(t) }
+        t.onLongPress = { if (!editMode) openTileMenu(t) }
         t.quietFocus = { !byKey() }
         return t
     }
@@ -852,7 +852,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         syncOther()
     }
 
-    // ---------- Move mode (hold OK on an app) ----------
+    // ---------- Move mode (Move in a tile's options) ----------
 
     private fun tileOf(pkg: String?): TileView? {
         if (pkg == null) return null
@@ -860,7 +860,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         return null
     }
 
-    /** Hold OK on a tile: it lifts and wiggles; arrows move it across the shelf and the drawer. */
+    /** Move in a tile's options: it lifts and wiggles; arrows move it across the shelf and the drawer. */
     private fun startMove(t: TileView) {
         val pkg = t.app?.pkg ?: return
         if (editMode || movingPkg != null || settings.isOpen || cc.isOpen) return
@@ -981,8 +981,33 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     }
 
     /**
-     * Menu while moving: add to or remove from the top row, change a TV input's icon, or hide. Each action first
-     * drops the app where it is.
+     * Hold OK on a tile: its options (move, add to or remove from the top row, a TV input's icon, hide). Many
+     * remotes have no Menu button, so the hold is the way in. The hold's repeats and its release are eaten, so
+     * they do not pick the first option.
+     */
+    private fun openTileMenu(t: TileView) {
+        val app = t.app ?: return
+        if (editMode || movingPkg != null || settings.isOpen || cc.isOpen || appMenu.isOpen) return
+        val pkg = app.pkg
+        eatOkUp = true
+        sound?.takeIf { prefs.sound }?.tick()
+        blockHome(true)
+        appMenu.open(app.label, listOfNotNull(
+            "Move" to { tileOf(pkg)?.let { startMove(it) } },
+            (if (pkg in dockPkgs) "Remove from top row" else "Add to top row") to { toggleDock(pkg) },
+            if (app.isInput) "Change icon" to { openIconMenu(app) } else null,
+            (if (app.isInput) "Hide input" else "Hide app") to { hideApp(pkg) }
+        )) {
+            blockHome(false)
+            tileOf(pkg)?.requestFocus()
+            updateHeroRunning()
+        }
+        updateHeroRunning()
+    }
+
+    /**
+     * Menu (or Play/Pause) while moving: add to or remove from the top row, change a TV input's icon, or hide. Each
+     * action first drops the app where it is.
      */
     private fun openAppMenu() {
         val pkg = movingPkg ?: return

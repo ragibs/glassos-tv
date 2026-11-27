@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Holding OK on an app or a TV input opens its options (Move, Add to or Remove from top row, Change icon for an
+  input, Hide) instead of starting the move straight away. They used to need the Menu button while moving, which many
+  remotes (Chromecast with Google TV, Google TV Streamer and others) do not have, so an input's icon could not be
+  changed on those TVs.
 - Control Center looks like tvOS's: the time and date head the panel, with the tabs beside them as round icons
   (Profile, Controls, and Now Playing and VPN while active) and the shown tab lit. The tab name above the buttons is
   gone, and nine buttons make a three by three grid instead of two full rows and one button on its own.

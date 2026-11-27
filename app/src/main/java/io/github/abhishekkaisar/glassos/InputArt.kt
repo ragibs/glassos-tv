@@ -15,7 +15,7 @@ import android.graphics.Shader
 /**
  * Banner art for a TV input's tile, in glass: a deep colour under a curved sheen, the device's logo (or a drawn glyph
  * where there is no logo to use) in bright white with a soft shadow, and the input's name under it. The user picks
- * the style (Menu while moving the tile); until then it is guessed from the name the input has on the TV. An image in
+ * the style (hold OK on the tile); until then it is guessed from the name the input has on the TV. An image in
  * Pictures/Glass/icons named after the input replaces the art, as it does for apps.
  */
 object InputArt {
