@@ -86,6 +86,8 @@ object HomeOverlay {
                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.OPAQUE)
         lp.title = "GlassHome"
+        // Setup's keyboard is a text field for the phone app; the TV's own keyboard stays closed.
+        lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
         lp.windowAnimations = 0
         try {
             w.addView(s.root, lp)
