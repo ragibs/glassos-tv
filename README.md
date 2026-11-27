@@ -31,8 +31,8 @@ were taken on the Android TV emulator (Now Playing with a test song).
   have installed (Netflix, Prime Video, Disney+, Apple TV+, Max and others) come first, for the country you
   choose. OK on a title opens its app.
 - **Glass shelf**: up to six favourite apps on a frosted glass shelf, with the first row of the app drawer peeking
-  in below it. Hold OK on any app to move it across the shelf and the drawer, like Apple TV; Menu while it moves
-  adds it to the top row or removes it, or hides it.
+  in below it. Hold OK on any app for its options: **Move** it across the shelf and the drawer, like Apple TV, add
+  it to the top row or remove it, or hide it. No Menu button needed.
 - **App drawer**: every installed app, with labels, a scroll below the shelf.
 - **Adaptive profile pill**: the time and your avatar in the top right, with a tint that adapts to the art behind it,
   and a small shield while a VPN is connected.
@@ -44,7 +44,7 @@ were taken on the Android TV emulator (Now Playing with a test song).
   the image after the package instead.
 - **HDMI inputs as tiles**, on TVs that have inputs (not sticks or boxes): each input sits in the drawer like an app and
   can go on the top row. OK switches to it. Its glass icon is guessed from the name you gave the input on the TV ("PS5"
-  gets the PlayStation logo); to change it, hold OK on the tile, press Menu and choose **Change icon** (HDMI,
+  gets the PlayStation logo); to change it, hold OK on the tile and choose **Change icon** (HDMI,
   PlayStation, Xbox, Nintendo Switch, Steam, PC, Apple TV, Roku, NVIDIA Shield, Cable box, Blu-ray). An image named
   after the input in `Pictures/Glass/icons` replaces it. Logos are from [Simple Icons](https://simpleicons.org) (CC0)
   and belong to their owners.
