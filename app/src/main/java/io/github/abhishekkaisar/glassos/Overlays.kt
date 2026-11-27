@@ -122,11 +122,13 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
             setPadding(dpi(20f), dpi(8f), 0, dpi(2f))
         }
         list.addView(bgLabel)
-        thumbsScroll.setPadding(0, dpi(12f), 0, dpi(14f))
-        thumbsRow.setPadding(dpi(18f), 0, dpi(18f), 0)
+        // The scroll clips the row to the row's own bounds, so the room for a focused (1.1x) thumbnail and its glow is
+        // the row's padding; the scroll's would sit outside that clip. The strip moves up by the extra room so the
+        // layout stays where it was.
+        thumbsRow.setPadding(dpi(18f), dpi(18f), dpi(18f), dpi(18f))
         thumbsScroll.addView(thumbsRow, ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         list.addView(thumbsScroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            leftMargin = -dpi(14f); rightMargin = -dpi(14f); bottomMargin = dpi(6f)
+            leftMargin = -dpi(14f); rightMargin = -dpi(14f); topMargin = -dpi(6f); bottomMargin = dpi(2f)
         })
         list.addView(editRow, rowLp())
         list.addView(appsRow, rowLp())
