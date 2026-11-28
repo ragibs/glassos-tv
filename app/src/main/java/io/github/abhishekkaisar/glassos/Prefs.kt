@@ -44,7 +44,7 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("screensaverMinutes", 10)
         set(v) { sp.edit().putInt("screensaverMinutes", v).apply() }
 
-    /** Seconds each landscape screensaver photo shows; a portrait one pans for half as long again. */
+    /** Seconds each screensaver photo shows. */
     var screensaverSeconds: Int
         get() = sp.getInt("screensaverSeconds", 15)
         set(v) { sp.edit().putInt("screensaverSeconds", v).apply() }

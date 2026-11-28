@@ -108,7 +108,9 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private var lastKeyAt = 0L
     /** True while the window showing this home is in front (activity resumed, or the overlay shown). */
     var resumed = false
-        set(v) { field = v; updateHeroRunning() }
+        set(v) { field = v; updateHeroRunning(); updateKeepOn() }
+    /** False once the screensaver started by itself and had nothing to show: the TV sleeps as usual until a key. */
+    private var holdForSaver = true
     private var released = false
     private val refreshing = java.util.concurrent.atomic.AtomicBoolean(false)
     private val main = Handler(Looper.getMainLooper())
@@ -512,8 +514,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private var resumedAt = 0L
 
     /**
-     * The home left alone: with music playing, full-screen Now Playing opens after [NOW_PLAYING_IDLE_MS]; otherwise
-     * the screensaver, when one is chosen, after its own wait.
+     * The home left alone: the screensaver, when one is chosen, after its own wait (with what is playing on it);
+     * otherwise, with music playing, full-screen Now Playing after [NOW_PLAYING_IDLE_MS].
      */
     private val idleCheck = object : Runnable {
         override fun run() {
@@ -523,11 +525,21 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
                 !appMenu.isOpen && !editMode && movingPkg == null
             if (free) {
                 val playing = NowPlaying.current(ctx)?.playing == true
-                if (playing && idle >= NOW_PLAYING_IDLE_MS) openNowPlaying(auto = true)
-                else if (!playing && prefs.screensaver != Screensaver.OFF && idle >= prefs.screensaverMinutes * 60_000L) openScreensaver(auto = true)
+                if (prefs.screensaver != Screensaver.OFF) { if (idle >= prefs.screensaverMinutes * 60_000L) openScreensaver(auto = true) }
+                else if (playing && idle >= NOW_PLAYING_IDLE_MS) openNowPlaying(auto = true)
             }
+            updateKeepOn()
             main.postDelayed(this, IDLE_CHECK_MS)
         }
+    }
+
+    /**
+     * While this home is in front and a screensaver is chosen, the screen stays on, so the TV's own screensaver
+     * (which starts after the system's timeout) cannot come up before ours. Ours then keeps the screen on itself.
+     */
+    private fun updateKeepOn() {
+        if (!::root.isInitialized || !::screensaver.isInitialized) return
+        root.keepScreenOn = resumed && holdForSaver && prefs.screensaver != Screensaver.OFF && !screensaver.isOpen
     }
 
     fun onResumed() {
@@ -1153,11 +1165,14 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         screensaverReturn = focused()
         blockHome(true)
         if (!screensaver.open(auto)) { blockHome(false); screensaverReturn = null; return }
+        updateKeepOn()
         updateHeroRunning()
     }
 
     fun onScreensaverClosed() {
         blockHome(false)
+        if (screensaver.gaveUp) holdForSaver = false
+        updateKeepOn()
         // A key closed it: the wait starts again from now.
         lastKeyAt = SystemClock.uptimeMillis()
         val r = screensaverReturn
@@ -1413,6 +1428,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private inner class KeyRoot(c: Context) : FrameLayout(c) {
         override fun dispatchKeyEvent(e: KeyEvent): Boolean {
             lastKeyAt = SystemClock.uptimeMillis()
+            if (!holdForSaver) { holdForSaver = true; updateKeepOn() }
             if (onKey(e)) return true
             if (e.keyCode == KeyEvent.KEYCODE_BACK && ctx !is Activity) {
                 if (e.action == KeyEvent.ACTION_UP && !e.isCanceled) onBack()

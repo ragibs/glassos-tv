@@ -39,6 +39,7 @@ object Fonts {
     val light: Typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
     val regular: Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
     val medium: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    val bold: Typeface = Typeface.create("sans-serif", Typeface.BOLD)
 }
 
 /** Matrix mapping a view's local coordinates to window coordinates, including scale/translation/rotation of every ancestor. */
